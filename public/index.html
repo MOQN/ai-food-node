@@ -4,16 +4,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ComfyTest</title>
-
+  <title>ComfyUI Test - Flux & ACE</title>
   <link rel="stylesheet" href="style.css">
-
-  <script src="lib/p5.min.js"></script>
-  <script src="script.js"></script>
 </head>
 
 <body>
+  <div id="drop-overlay" class="hidden">
+    <h1>Drop image to generate!</h1>
+  </div>
 
+  <main class="container">
+    <header>
+      <h1>AI Monster Band Generator</h1>
+      <p>Upload a food landscape image to generate your cozy monster musicians.</p>
+    </header>
+
+    <div class="workspace">
+      <div class="panel input-panel">
+        <h2>Reference Image</h2>
+        <div class="image-box" id="ref-image-box">
+          <span id="ref-placeholder">No image selected</span>
+          <img id="ref-image" class="hidden" alt="Reference">
+        </div>
+
+        <div class="controls">
+          <input type="file" id="file-input" accept="image/png, image/jpeg, image/webp" class="hidden">
+          <button id="choose-file-btn" class="btn secondary">Choose Image</button>
+          <button id="generate-btn" class="btn primary" disabled>Generate</button>
+        </div>
+      </div>
+
+      <div class="panel output-panel">
+        <h2>Generated Result</h2>
+        <div class="image-box" id="out-image-box">
+          <div id="loading-indicator" class="hidden">
+            <div class="spinner"></div>
+            <p id="status-text">Processing...</p>
+          </div>
+          <img id="out-image" class="hidden" alt="Generated">
+        </div>
+
+        <div class="audio-container">
+          <audio id="out-audio" controls class="hidden"></audio>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
 </body>
 
 </html>

@@ -1,121 +1,195 @@
-// python main.py --enable-cors-header="*"   // deal with CORS issues
-// taskkill /F /IM python.exe                // Kill left servers: 
+const dropOverlay = document.getElementById('drop-overlay');
+const fileInput = document.getElementById('file-input');
+const chooseFileBtn = document.getElementById('choose-file-btn');
+const generateBtn = document.getElementById('generate-btn');
 
+const refImage = document.getElementById('ref-image');
+const refPlaceholder = document.getElementById('ref-placeholder');
+const refImageBox = document.getElementById('ref-image-box');
 
-let workflowJSON;
-let ws;
-let resultImage = null;
-let isGenerating = false;
+const outImage = document.getElementById('out-image');
+const outAudio = document.getElementById('out-audio');
+const loadingIndicator = document.getElementById('loading-indicator');
+const statusText = document.getElementById('status-text');
 
-const SERVER_ADDRESS = "127.0.0.1:8188";
-const CLIENT_ID = "p5js_direct_" + Math.floor(Math.random() * 1000);
+let currentBase64Image = null;
+let isGeneratingImage = false;
+let isGeneratingAudio = false;
 
-function preload() {
-  workflowJSON = loadJSON('workflow/test.json');
-}
-
-function setup() {
-  createCanvas(512, 512);
-  textAlign(CENTER, CENTER);
-  textSize(16);
-
-  connectWebSocket();
-}
-
-function draw() {
-  background(40);
-
-  if (resultImage) {
-    image(resultImage, 0, 0, width, height);
-  } else {
-    fill(255);
-    text("화면을 클릭하면 이미지 생성을 시작합니다.", width / 2, height / 2);
+// Read file as Base64 and update UI
+function processFile(file, autoGenerate = false) {
+  if (!file || !file.type.startsWith('image/')) {
+    alert("Please upload a valid image file.");
+    return;
   }
 
-  if (isGenerating) {
-    fill(0, 150);
-    rect(0, 0, width, height);
-    fill(255);
-    text("ComfyUI에서 렌더링 중...", width / 2, height / 2);
-  }
-}
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    currentBase64Image = e.target.result;
 
-function mousePressed() {
-  sendPrompt();
-}
+    // Update UI
+    refImage.src = currentBase64Image;
+    refImage.classList.remove('hidden');
+    refPlaceholder.classList.add('hidden');
+    refImageBox.style.border = "2px solid #fca311";
+    generateBtn.disabled = false;
 
-//
-
-function sendPrompt() {
-  if (isGenerating) return;
-
-  workflowJSON["6"]["inputs"]["text"] = "a beautiful cyberpunk cat, neon lights, 8k resolution";
-  workflowJSON["3"]["inputs"]["seed"] = Math.floor(random(1000000));
-
-  triggerComfyUI();
-}
-
-
-async function triggerComfyUI() {
-  isGenerating = true;
-  console.log("ComfyUI에 렌더링 명령 전송 중...");
-
-  try {
-    let response = await fetch(`http://${SERVER_ADDRESS}/prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: workflowJSON,
-        client_id: CLIENT_ID
-      })
-    });
-
-    let result = await response.json();
-    console.log("주문 성공! 주문번호:", result.prompt_id);
-  } catch (error) {
-    console.error("통신 에러! ComfyUI가 켜져 있는지, CORS 설정이 되었는지 확인하세요.", error);
-    isGenerating = false;
-  }
-}
-
-// 7. 다이렉트 웹소켓 통신 및 바이너리 이미지 수신
-function connectWebSocket() {
-  ws = new WebSocket(`ws://${SERVER_ADDRESS}/ws?clientId=${CLIENT_ID}`);
-
-  // 🌟 핵심: ComfyUI가 보내는 파일 덩어리를 Blob으로 받겠다고 선언
-  ws.binaryType = "blob";
-
-  ws.onopen = () => console.log("웹소켓 연결 성공!");
-
-  ws.onmessage = function (event) {
-    // [A] 상태 알림 (텍스트 메시지) 처리
-    if (typeof event.data === "string") {
-      let msg = JSON.parse(event.data);
-      if (msg.type === 'executed') {
-        console.log("엔진 계산 완료 (이미지 전송 대기 중...)");
-      }
-    }
-    // [B] SaveImageWebsocket 노드가 쏜 실제 이미지 (바이너리 Blob) 처리
-    else if (event.data instanceof Blob) {
-      console.log("이미지 바이너리 데이터 수신 성공!");
-
-      // ComfyUI 바이너리 데이터의 맨 앞 8바이트(헤더)를 잘라냅니다.
-      let imageBlob = event.data.slice(8);
-
-      // 브라우저 메모리에 임시 URL 생성
-      let imageUrl = URL.createObjectURL(imageBlob);
-
-      // p5.js 전역 변수에 이미지 로드 (draw 함수에서 그려짐)
-      loadImage(imageUrl, function (img) {
-        resultImage = img;
-        isGenerating = false; // 로딩 상태 해제
-
-        // 메모리 누수 방지를 위해 임시 URL 파기
-        URL.revokeObjectURL(imageUrl);
-      });
+    // Method 2: Auto-execute if dropped
+    if (autoGenerate) {
+      startGeneration();
     }
   };
+  reader.readAsDataURL(file);
+}
 
-  ws.onerror = (error) => console.error("웹소켓 에러 발생:", error);
-  ws.onclose = () => console.log("웹소켓 연결이 끊어졌습니다.");
+// ==========================================
+// Event Listeners: Method 1 (Click & Submit)
+// ==========================================
+
+// Link custom button to hidden file input
+chooseFileBtn.addEventListener('click', () => {
+  fileInput.click();
+});
+
+// Handle file selection
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  processFile(file, false); // false = Do not auto-generate
+});
+
+// Handle Generate button click
+generateBtn.addEventListener('click', () => {
+  if (currentBase64Image) {
+    startGeneration();
+  }
+});
+
+// ==========================================
+// Event Listeners: Method 2 (Drag & Drop)
+// ==========================================
+
+// Highlight overlay when dragging over the window
+window.addEventListener('dragover', (e) => {
+  e.preventDefault(); // Required to allow dropping
+  dropOverlay.classList.remove('hidden');
+});
+
+// Hide overlay when dragging leaves the window
+window.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  // Only hide if we are leaving the actual window (not child elements)
+  if (e.relatedTarget === null || e.relatedTarget.nodeName === "HTML") {
+    dropOverlay.classList.add('hidden');
+  }
+});
+
+// Handle the actual drop event
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropOverlay.classList.add('hidden');
+
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    // true = Auto-trigger generation immediately after reading the file
+    processFile(file, true);
+  }
+});
+
+// ==========================================
+// API Communication (Flux & ACE)
+// ==========================================
+
+function updateLoadingState() {
+  if (isGeneratingImage || isGeneratingAudio) {
+    generateBtn.disabled = true;
+    outImage.classList.add('hidden');
+    loadingIndicator.classList.remove('hidden');
+
+    if (isGeneratingImage && isGeneratingAudio) {
+      statusText.innerText = "Generating Image & Audio...";
+    } else if (isGeneratingImage) {
+      statusText.innerText = "Generating Image...";
+    } else {
+      statusText.innerText = "Generating Audio...";
+    }
+  } else {
+    generateBtn.disabled = false;
+    loadingIndicator.classList.add('hidden');
+  }
+}
+
+function startGeneration() {
+  if (isGeneratingImage || isGeneratingAudio) return;
+
+  // Reset output UI
+  outImage.classList.add('hidden');
+  outAudio.classList.add('hidden');
+  outAudio.src = "";
+
+  const payload = {
+    promptText: "the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed, tiny food-shape musicians are generated based on the ingredient of food and performing as a small cozy band across a food landscape, cute miniature ingredients playing soft jazz instruments",
+    seed: Math.floor(Math.random() * 1000000),
+    referenceImage: currentBase64Image
+  };
+
+  // Fire concurrently
+  fetchImage(payload);
+  fetchAudio(payload);
+}
+
+async function fetchImage(payload) {
+  isGeneratingImage = true;
+  updateLoadingState();
+
+  try {
+    const response = await fetch('/api/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.dataURI) {
+      outImage.src = result.dataURI;
+      outImage.classList.remove('hidden');
+    } else {
+      console.error("Image API Error:", result.error);
+      alert("Failed to generate image.");
+    }
+  } catch (err) {
+    console.error("Fetch Error (Image):", err);
+  } finally {
+    isGeneratingImage = false;
+    updateLoadingState();
+  }
+}
+
+async function fetchAudio(payload) {
+  isGeneratingAudio = true;
+  updateLoadingState();
+
+  try {
+    const response = await fetch('/api/generate-audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.dataURI) {
+      outAudio.src = result.dataURI;
+      outAudio.classList.remove('hidden');
+      // Autoplay the generated audio
+      outAudio.play();
+    } else {
+      console.error("Audio API Error:", result.error);
+    }
+  } catch (err) {
+    console.error("Fetch Error (Audio):", err);
+  } finally {
+    isGeneratingAudio = false;
+    updateLoadingState();
+  }
 }

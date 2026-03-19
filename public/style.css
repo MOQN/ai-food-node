@@ -1,0 +1,286 @@
+/* ==========================================
+   Reset & Base Styles
+   ========================================== */
+:root {
+  --bg-color: #000000;
+  /* Pure Black background */
+  --panel-bg: transparent;
+  /* No filled panels */
+  --text-primary: #ffffff;
+  /* White text */
+  --text-secondary: #888888;
+  /* Dimmed gray text for subtle info */
+  --border-color: #333333;
+  /* Thin, dark gray line for wireframes */
+  --accent-line: #ffffff;
+  /* Pure white line for active elements */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --border-width: 1px;
+  /* Ultra-thin stroke */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-weight: 300;
+  /* Lighter font weight for modern look */
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 1100px;
+  width: 100%;
+  padding: 40px 20px;
+}
+
+/* ==========================================
+   Header Style (Typography only)
+   ========================================== */
+header {
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+header h1 {
+  margin: 0 0 15px 0;
+  font-size: 1.8rem;
+  font-weight: 200;
+  /* Extra light weight */
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  /* Wide letter spacing */
+  color: var(--text-primary);
+}
+
+header p {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+}
+
+/* ==========================================
+   Workspace Layout & Panels
+   ========================================== */
+.workspace {
+  display: flex;
+  gap: 30px;
+}
+
+.panel {
+  flex: 1;
+  background-color: var(--panel-bg);
+  /* Thin outline instead of filled background */
+  border: var(--border-width) solid var(--border-color);
+  border-radius: 4px;
+  /* Less rounded, more geometric */
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  /* Remove box-shadow for flat design */
+  box-shadow: none;
+}
+
+h2 {
+  font-size: 0.9rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-top: 0;
+  margin-bottom: 25px;
+  color: var(--text-secondary);
+  border: none;
+  /* Remove bottom border */
+  padding: 0;
+}
+
+/* ==========================================
+   Image Boxes (Wireframes)
+   ========================================== */
+.image-box {
+  flex-grow: 1;
+  aspect-ratio: 1 / 1;
+  background-color: transparent;
+  /* No fill */
+  border: var(--border-width) solid var(--border-color);
+  /* Thin outline */
+  border-radius: 2px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 0.3s ease;
+}
+
+.image-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Prevent image from touching the ultra-thin border directly */
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+#ref-placeholder {
+  color: #444444;
+  /* Very dim placeholder text */
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ==========================================
+   Controls & Buttons (Ghost style)
+   ========================================== */
+.controls {
+  margin-top: 25px;
+  display: flex;
+  gap: 15px;
+}
+
+.btn {
+  flex: 1;
+  padding: 15px;
+  background-color: transparent;
+  /* Ghost button */
+  border: var(--border-width) solid var(--border-color);
+  /* Thin outline */
+  border-radius: 2px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+/* Hover state: Light up the border and text */
+.btn:not(:disabled):hover {
+  border-color: var(--accent-line);
+  background-color: #111111;
+  /* Extremely subtle fill on hover */
+}
+
+/* Disabled state: Almost invisible */
+.btn:disabled {
+  opacity: 1;
+  /* Keep opacity, change colors instead */
+  border-color: #222222;
+  color: #444444;
+  cursor: not-allowed;
+}
+
+/* Remove Primary/Secondary distinction, use active white border for 'Generate' */
+.btn.primary {
+  border-color: #555555;
+  /* Slightly brighter than default border */
+}
+
+.btn.primary:not(:disabled):hover {
+  border-color: var(--accent-line);
+}
+
+/* ==========================================
+   Audio Player (Grayscale)
+   ========================================= */
+.audio-container {
+  margin-top: 25px;
+  height: 40px;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+}
+
+audio {
+  width: 100%;
+  height: 30px;
+  /* Basic way to make browser-native audio monochrome/dark */
+  filter: invert(1) grayscale(1);
+  opacity: 0.6;
+}
+
+/* ==========================================
+   Drag & Drop Overlay (Minimalist)
+   ========================================== */
+#drop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  /* Pure black background, very slightly transparent */
+  background-color: rgba(0, 0, 0, 0.95);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  /* Thick white dashed border offset from edge */
+  border: 2px dashed var(--accent-line);
+  box-sizing: border-box;
+  margin: 20px;
+  width: calc(100vw - 40px);
+  height: calc(100vh - 40px);
+  border-radius: 4px;
+}
+
+#drop-overlay h1 {
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 200;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  pointer-events: none;
+}
+
+/* ==========================================
+   Utilities & Loading (Line art)
+   ========================================== */
+.hidden {
+  display: none !important;
+}
+
+#loading-indicator {
+  text-align: center;
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: var(--border-width) solid #222222;
+  /* dim circle */
+  border-top: var(--border-width) solid var(--accent-line);
+  /* active white line */
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 15px auto;
+}
+
+#status-text {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
