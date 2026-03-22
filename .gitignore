@@ -1,9 +1,12 @@
-# ignore mac files and test folders
+# ignore mac files
 .DS_Store
-__test__/
 
 # ignore node modules
 node_modules/
 
 # ignore environment variable files
 .env
+
+# ignore a folder starting with "__"
+__test__/
+__*
