@@ -372,7 +372,7 @@ async function runContinuousImageRegeneration(originalPrompt) {
 
   // Construct a specific "dynamic movement" prompt to append.
   // We emphasize jumping, dancing, wild gestures, and sweat to force drastic pose changes.
-  const movementAugmentation = ", high-energy action performance, characters captured mid-air, jumping, dancing wildly, extreme dynamic poses, wild instrument gestures, intense facial expressions, sweat dripping, motion blur on limbs, energetic stage presence, dramatic camera pan right, rotating view to the right, dynamic perspective shift revealing the right side of the scene, dynamic camera zooming in on one specific character, tight close-up on a musician's face and hands, shallow depth of field,";
+  const movementAugmentation = ", high-energy action performance, characters captured mid-air, jumping, dancing wildly, extreme dynamic poses, wild instrument gestures, intense facial expressions, sweat dripping, motion blur on limbs, energetic stage presence, dramatic camera pan right, rotating view to the right, dynamic perspective shift revealing the right side of the scene, dynamic camera zooming in on one specific character, shallow depth of field, flashy lighting, dramatic light shifts, stark contrast between light and shadow, chiaroscuro, strobe lights, pulsating colors, rapid changes from dark to bright, moody atmosphere with brilliant highlights";
 
   // Combine original prompt with the movement modification
   const hyperDynamicPrompt = originalPrompt + movementAugmentation;
