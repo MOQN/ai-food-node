@@ -1,5 +1,4 @@
-// Note:
-// taskkill /F /IM python.exe                 // Simply kill all servers
+// taskkill /F /IM python.exe // Kill ComfyUI servers if needed
 
 const express = require('express');
 const WebSocket = require('ws');
@@ -10,95 +9,63 @@ const path = require('path');
 const app = express();
 const PORT = 3000;
 
-// Configuration: Remote GPU PCs
+// Configuration
 const COMFYUI_SERVER_IMAGE = "127.0.0.1:8188";
 const COMFYUI_SERVER_AUDIO = "127.0.0.1:8188";
 
-// Load workflows into memory at startup
 const imageWorkflowPath = path.join(__dirname, 'workflow/image.json');
 const audioWorkflowPath = path.join(__dirname, 'workflow/audio.json');
 
 const rawImageTemplate = fs.readFileSync(imageWorkflowPath, 'utf8');
 const rawAudioTemplate = fs.readFileSync(audioWorkflowPath, 'utf8');
 
-// Increase JSON payload limit
+// Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
-
-// Serve node_modules for local frontend dependencies
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')));
 
+// Helper: Upload
 async function uploadImageToComfyUI(base64Data, targetServer) {
   try {
-    console.log(`[Upload] 1. Analyzing Base64 data and targeting ${targetServer}...`);
-
     const parts = base64Data.split(',');
     const pureBase64 = parts.length > 1 ? parts[1] : parts[0];
     const buffer = Buffer.from(pureBase64, 'base64');
 
-    console.log(`[Upload] 2. Image buffer created. Size: ${buffer.length} bytes`);
+    if (buffer.length === 0) throw new Error("Buffer empty");
 
-    if (buffer.length === 0) {
-      throw new Error("Buffer is empty! The image from frontend is corrupted.");
-    }
-
-    // Set the input reference image filename
     const filename = `ai-food-input-${Date.now()}.png`;
     const boundary = '----ComfyUIBoundary' + Math.random().toString(16).slice(2);
 
-    let header = '';
-    header += `--${boundary}\r\n`;
-    header += `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n`;
-    header += `Content-Type: image/png\r\n\r\n`;
+    let header = `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`;
+    let footer = `\r\n--${boundary}\r\nContent-Disposition: form-data; name="type"\r\n\r\ninput\r\n--${boundary}\r\nContent-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n--${boundary}--\r\n`;
 
-    let footer = '';
-    footer += `\r\n--${boundary}\r\n`;
-    footer += `Content-Disposition: form-data; name="type"\r\n\r\n`;
-    footer += `input\r\n`;
-    footer += `--${boundary}\r\n`;
-    footer += `Content-Disposition: form-data; name="overwrite"\r\n\r\n`;
-    footer += `true\r\n`;
-    footer += `--${boundary}--\r\n`;
-
-    const multipartBody = Buffer.concat([
-      Buffer.from(header, 'utf8'),
-      buffer,
-      Buffer.from(footer, 'utf8')
-    ]);
-
-    console.log(`[Upload] 3. Sending multipart payload to ${targetServer}...`);
+    const multipartBody = Buffer.concat([Buffer.from(header, 'utf8'), buffer, Buffer.from(footer, 'utf8')]);
 
     const res = await fetch(`http://${targetServer}/upload/image`, {
       method: 'POST',
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': multipartBody.length
-      },
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': multipartBody.length },
       body: multipartBody
     });
 
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
     const result = await res.json();
-    console.log("[Upload] 4. ComfyUI Server Response:", result);
-
-    if (!res.ok) {
-      throw new Error(`Upload failed with status ${res.status}: ${JSON.stringify(result)}`);
-    }
-
     return result.name;
   } catch (err) {
-    console.error("[Upload] FATAL ERROR during image upload:", err);
+    console.error("[Upload] FATAL:", err);
     throw err;
   }
 }
 
-function runComfyUIWorkflow(workflowJSON, targetServer) {
+// Helper: Run Workflow
+function runComfyUIWorkflow(workflowJSON, targetServer, targetNodeIds) {
   return new Promise((resolve, reject) => {
     const clientId = crypto.randomUUID();
     const wsUrl = `ws://${targetServer}/ws?clientId=${clientId}`;
     const ws = new WebSocket(wsUrl);
 
-    let outputDataURI = null;
-    let downloadPromise = null;
+    const collectedOutputs = {};
+    let executionError = null;
+    const downloadPromises = []; // Tracker for async file downloads
 
     ws.on('open', async () => {
       try {
@@ -107,12 +74,8 @@ function runComfyUIWorkflow(workflowJSON, targetServer) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: workflowJSON, client_id: clientId })
         });
-
-        if (!promptResponse.ok) throw new Error(`HTTP Error: ${promptResponse.status}`);
-      } catch (error) {
-        ws.close();
-        reject(error);
-      }
+        if (!promptResponse.ok) throw new Error(`HTTP ${promptResponse.status}`);
+      } catch (error) { ws.close(); reject(error); }
     });
 
     ws.on('message', async (data, isBinary) => {
@@ -120,110 +83,129 @@ function runComfyUIWorkflow(workflowJSON, targetServer) {
         const message = JSON.parse(data.toString());
 
         if (message.type === 'executed' && message.data.output) {
+          const nodeId = message.data.node;
           const output = message.data.output;
 
-          downloadPromise = (async () => {
+          if (targetNodeIds.includes(nodeId)) {
             let fileInfo = null;
-            let mediaCategory = '';
+            let mediaType = '';
 
-            if (output.audio && output.audio.length > 0) {
-              fileInfo = output.audio[0];
-              mediaCategory = 'audio';
-            } else if (output.images && output.images.length > 0) {
+            if (output.images && output.images.length > 0) {
               fileInfo = output.images[0];
-              mediaCategory = 'image';
+              mediaType = 'image';
+            } else if (output.audio && output.audio.length > 0) {
+              fileInfo = output.audio[0];
+              mediaType = 'audio';
             }
 
             if (fileInfo) {
               const fetchUrl = `http://${targetServer}/view?filename=${fileInfo.filename}&type=${fileInfo.type}&subfolder=${fileInfo.subfolder}`;
-              try {
-                const fileRes = await fetch(fetchUrl);
-                const arrayBuffer = await fileRes.arrayBuffer();
-                const base64Data = Buffer.from(arrayBuffer).toString('base64');
-                const ext = fileInfo.filename.split('.').pop();
 
-                console.log(`[API] Successfully fetched and converted ${mediaCategory} from ${targetServer}!`);
-                return `data:${mediaCategory}/${ext};base64,${base64Data}`;
-              } catch (err) {
-                console.error(`[API] Failed to fetch file from ${targetServer}:`, err);
-                return null;
-              }
+              const downloadTask = (async () => {
+                try {
+                  const fileRes = await fetch(fetchUrl);
+                  const arrayBuffer = await fileRes.arrayBuffer();
+                  const base64Data = Buffer.from(arrayBuffer).toString('base64');
+                  const ext = fileInfo.filename.split('.').pop();
+
+                  collectedOutputs[nodeId] = `data:${mediaType}/${ext};base64,${base64Data}`;
+                } catch (err) {
+                  console.error(`[WS] Fetch file failed from ${nodeId}:`, err);
+                }
+              })();
+
+              downloadPromises.push(downloadTask);
             }
-            return null;
-          })();
+          }
+        }
+
+        if (message.type === 'execution_error') {
+          executionError = message.data;
+          ws.close();
         }
 
         if (message.type === 'executing' && message.data.node === null) {
           ws.close();
-          if (downloadPromise) {
-            outputDataURI = await downloadPromise;
+          if (executionError) {
+            reject(new Error(`ComfyUI Error: ${JSON.stringify(executionError)}`));
+          } else {
+            // Wait for all downloads to finish before returning
+            Promise.all(downloadPromises).then(() => {
+              resolve(collectedOutputs);
+            });
           }
-          resolve(outputDataURI);
         }
       }
     });
 
-    ws.on('error', (error) => {
-      ws.close();
-      reject(error);
-    });
+    ws.on('error', (error) => { ws.close(); reject(error); });
   });
 }
 
-// API Endpoint 1: Generate Image
+// API Endpoint 1: Generate Image + Depth
 app.post('/api/generate-image', async (req, res) => {
   const { promptText, seed, referenceImage, filePrefix } = req.body;
 
-  if (!promptText) return res.status(400).json({ error: "promptText is required." });
-  if (!referenceImage) return res.status(400).json({ error: "referenceImage (Base64) is required." });
+  if (!promptText || !referenceImage) return res.status(400).json({ error: "Missing data." });
 
   try {
-    console.log("[API - Image] Routing upload to Image Server...");
     const uploadedFilename = await uploadImageToComfyUI(referenceImage, COMFYUI_SERVER_IMAGE);
+    const workflow = JSON.parse(rawImageTemplate);
 
-    const workflowJSON = JSON.parse(rawImageTemplate);
-    workflowJSON["135"]["inputs"]["text"] = promptText;
-    workflowJSON["125"]["inputs"]["noise_seed"] = seed || Math.floor(Math.random() * 1000000);
-    workflowJSON["76"]["inputs"]["image"] = uploadedFilename;
+    workflow["76"]["inputs"]["image"] = uploadedFilename;
+    workflow["125"]["inputs"]["noise_seed"] = seed || Math.floor(Math.random() * 1000000);
+    workflow["135"]["inputs"]["text"] = promptText;
 
-    // Direct injection into Node 94 (SaveImage)
-    const fallbackName = `ai-food-${Date.now()}-image`;
-    workflowJSON["94"]["inputs"]["filename_prefix"] = filePrefix || fallbackName;
+    // Ensure the base prefix is clean before appending
+    let basePrefix = filePrefix || `AIxFood/ai-food-${Date.now()}`;
+    if (basePrefix.endsWith('-image')) {
+      basePrefix = basePrefix.slice(0, -6);
+    }
 
-    console.log("[API - Image] Starting workflow on Image Server...");
-    const dataURI = await runComfyUIWorkflow(workflowJSON, COMFYUI_SERVER_IMAGE);
-    res.json({ success: true, dataURI });
+    workflow["94"]["inputs"]["filename_prefix"] = `${basePrefix}-image`;
+    workflow["698"]["inputs"]["filename_prefix"] = `${basePrefix}-depth`;
+
+    const targetNodes = ["94", "698"];
+    const results = await runComfyUIWorkflow(workflow, COMFYUI_SERVER_IMAGE, targetNodes);
+
+    res.json({
+      success: true,
+      imageDataURI: results["94"],
+      depthDataURI: results["698"]
+    });
+
   } catch (error) {
     console.error("[API Error - Image]", error);
-    res.status(500).json({ error: "Image generation failed." });
+    res.status(500).json({ error: "Image/Depth generation failed." });
   }
 });
 
 // API Endpoint 2: Generate Audio
 app.post('/api/generate-audio', async (req, res) => {
-  const { promptText, lyrics, seed, filePrefix } = req.body;
-  if (!promptText) return res.status(400).json({ error: "promptText is required." });
+  const { promptText, lyrics, seed, bpm, keyscale, filePrefix } = req.body;
+  if (!promptText) return res.status(400).json({ error: "Missing promptText." });
 
   try {
-    const workflowJSON = JSON.parse(rawAudioTemplate);
+    const workflow = JSON.parse(rawAudioTemplate);
     const currentSeed = seed || Math.floor(Math.random() * 1000000);
 
-    workflowJSON["94"]["inputs"]["tags"] = promptText;
+    workflow["94"]["inputs"]["tags"] = promptText;
+    if (lyrics) workflow["94"]["inputs"]["lyrics"] = lyrics;
+    workflow["94"]["inputs"]["seed"] = currentSeed;
 
-    if (lyrics) {
-      workflowJSON["94"]["inputs"]["lyrics"] = lyrics;
-    }
+    workflow["94"]["inputs"]["bpm"] = bpm || 190;
+    workflow["94"]["inputs"]["keyscale"] = keyscale || "E minor";
 
-    workflowJSON["94"]["inputs"]["seed"] = currentSeed;
-    workflowJSON["3"]["inputs"]["seed"] = currentSeed;
+    workflow["3"]["inputs"]["seed"] = currentSeed;
 
-    // Direct injection into Node 107 (SaveAudioMP3)
-    const fallbackName = `ai-food-${Date.now()}-audio`;
-    workflowJSON["107"]["inputs"]["filename_prefix"] = filePrefix || fallbackName;
+    const fallbackName = `AIxFood/audio/ai-food-${Date.now()}`;
+    workflow["107"]["inputs"]["filename_prefix"] = filePrefix || fallbackName;
 
-    console.log("[API - Audio] Starting workflow on Audio Server...");
-    const dataURI = await runComfyUIWorkflow(workflowJSON, COMFYUI_SERVER_AUDIO);
-    res.json({ success: true, dataURI });
+    const targetNodes = ["107"];
+    const results = await runComfyUIWorkflow(workflow, COMFYUI_SERVER_AUDIO, targetNodes);
+
+    res.json({ success: true, dataURI: results["107"] });
+
   } catch (error) {
     console.error("[API Error - Audio]", error);
     res.status(500).json({ error: "Audio generation failed." });

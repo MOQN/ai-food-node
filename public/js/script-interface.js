@@ -1,6 +1,4 @@
-// ==========================================
 // Data & Configuration
-// ==========================================
 const TAG_DATA = {
   food: ['Noodles', 'Dessert', 'Pasta', 'Hotpot', 'Strawberry', 'Cream', 'Chili Powder', 'Sushi', 'Burger', 'Steak', 'Chocolate'],
   taste: ['Spicy', 'Creamy', 'Sweet', 'Refreshing', 'Greasy', 'Clean', 'Savory', 'Sour', 'Bitter'],
@@ -19,18 +17,11 @@ const INSTRUMENT_MAP = {
   'Heavy Metal': 'spiky flying-V guitars and massive double-kick drums'
 };
 
-// ==========================================
-// Output File Settings
-// ==========================================
-// Change this variable to route saved files to a specific ComfyUI subfolder
 const OUTPUT_FOLDER = "AIxFood";
 
-// ==========================================
-// State Management & File Naming
-// ==========================================
+// State Management
 let currentBase64Image = null;
-let isGeneratingImage = false;
-let isGeneratingAudio = false;
+let currentSessionTimestamp = "";
 
 const selections = {
   food: new Set(),
@@ -38,9 +29,7 @@ const selections = {
   genre: new Set()
 };
 
-let currentSessionTimestamp = "";
-
-// Returns timestamp in format: yymmdd-hhmmss
+// Utility Functions
 function getFormattedTimestamp() {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
@@ -49,13 +38,30 @@ function getFormattedTimestamp() {
   const hh = String(now.getHours()).padStart(2, '0');
   const min = String(now.getMinutes()).padStart(2, '0');
   const ss = String(now.getSeconds()).padStart(2, '0');
-
   return `${yy}${mm}${dd}-${hh}${min}${ss}`;
 }
 
-// ==========================================
+function determineAudioSettings(selectedTastes) {
+  let settings = {
+    bpm: 190,
+    keyscale: "E minor"
+  };
+
+  if (selectedTastes.has('Spicy') || selectedTastes.has('Refreshing')) {
+    settings.bpm = 145;
+    settings.keyscale = "C major";
+  } else if (selectedTastes.has('Greasy') || selectedTastes.has('Bitter') || selectedTastes.has('Sour')) {
+    settings.bpm = 90;
+    settings.keyscale = "E minor";
+  } else if (selectedTastes.has('Sweet') || selectedTastes.has('Creamy')) {
+    settings.bpm = 110;
+    settings.keyscale = "A minor";
+  }
+
+  return settings;
+}
+
 // DOM Elements
-// ==========================================
 const dropOverlay = document.getElementById('drop-overlay');
 const fileInput = document.getElementById('file-input');
 const generateBtn = document.getElementById('generate-btn');
@@ -64,8 +70,8 @@ const wizardPanel = document.getElementById('wizard-panel');
 const outImage = document.getElementById('out-image');
 const outAudio = document.getElementById('out-audio');
 const audioProgressBar = document.getElementById('audio-progress-bar');
-const loadingIndicator = document.getElementById('loading-indicator');
-const statusText = document.getElementById('status-text');
+const statusImage = document.getElementById('status-image');
+const statusAudio = document.getElementById('status-audio');
 
 const reloadingSpinner = document.getElementById('reloading-spinner');
 
@@ -73,24 +79,7 @@ const commentsFood = document.getElementById('comments-food');
 const commentsTaste = document.getElementById('comments-taste');
 const commentsGenre = document.getElementById('comments-genre');
 
-// ==========================================
-// Custom Audio Player Logic
-// ==========================================
-function updateAudioProgress() {
-  if (outAudio.duration) {
-    const percentage = (outAudio.currentTime / outAudio.duration) * 100;
-    audioProgressBar.style.width = percentage + '%';
-  }
-}
-
-outAudio.addEventListener('timeupdate', updateAudioProgress);
-outAudio.addEventListener('ended', () => {
-  audioProgressBar.style.width = '0%';
-});
-
-// ==========================================
-// Flow Controller (Step Navigation)
-// ==========================================
+// Step Navigation
 function showStep(stepIndex) {
   document.querySelectorAll('.step').forEach(step => {
     if (step.id === `step-${stepIndex}`) {
@@ -99,9 +88,7 @@ function showStep(stepIndex) {
     } else {
       step.classList.remove('active');
       setTimeout(() => {
-        if (!step.classList.contains('active')) {
-          step.classList.add('hidden');
-        }
+        if (!step.classList.contains('active')) step.classList.add('hidden');
       }, 600);
     }
   });
@@ -114,33 +101,25 @@ document.querySelectorAll('.next-btn').forEach(btn => {
   });
 });
 
-// ==========================================
-// Initialization & UI Builders
-// ==========================================
+// Initialization & UI
 function init() {
   buildTagButtons('tags-food', TAG_DATA.food, 'food', '1');
   buildTagButtons('tags-taste', TAG_DATA.taste, 'taste', '2');
   buildTagButtons('tags-genre', TAG_DATA.genre, 'genre', '3', true);
 
   const restartBtn = document.getElementById('restart-btn');
-  if (restartBtn) {
-    restartBtn.addEventListener('click', () => {
-      location.reload();
-    });
-  }
+  if (restartBtn) restartBtn.addEventListener('click', () => location.reload());
 }
 
 function buildTagButtons(containerId, items, category, stepNum, isSingleSelect = false) {
   const container = document.getElementById(containerId);
   const nextBtn = document.querySelector(`#step-${stepNum} .next-btn`);
-
   if (!container) return;
 
   items.forEach(item => {
     const btn = document.createElement('button');
     btn.className = 'tag-btn';
     btn.innerText = item;
-
     btn.addEventListener('click', () => {
       if (isSingleSelect) {
         Array.from(container.children).forEach(c => c.classList.remove('active'));
@@ -152,24 +131,18 @@ function buildTagButtons(containerId, items, category, stepNum, isSingleSelect =
         if (isActive) selections[category].add(item);
         else selections[category].delete(item);
       }
-
-      if (nextBtn) {
-        nextBtn.disabled = selections[category].size === 0;
-      }
+      if (nextBtn) nextBtn.disabled = selections[category].size === 0;
     });
     container.appendChild(btn);
   });
 }
 
-// ==========================================
-// File Upload & Drag-and-Drop Handling
-// ==========================================
+// File Handling
 function processFile(file) {
   if (!file || !file.type.startsWith('image/')) {
     alert("Invalid file. Please upload an image.");
     return;
   }
-
   const reader = new FileReader();
   reader.onload = (e) => {
     currentBase64Image = e.target.result;
@@ -179,260 +152,175 @@ function processFile(file) {
 }
 
 const chooseFileBtn = document.getElementById('choose-file-btn');
-if (chooseFileBtn) {
-  chooseFileBtn.addEventListener('click', () => fileInput.click());
-}
-
-if (fileInput) {
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) processFile(e.target.files[0]);
-  });
-}
+if (chooseFileBtn) chooseFileBtn.addEventListener('click', () => fileInput.click());
+if (fileInput) fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length > 0) processFile(e.target.files[0]);
+});
 
 let dragCounter = 0;
+window.addEventListener('dragenter', (e) => { e.preventDefault(); dragCounter++; if (dropOverlay) dropOverlay.classList.add('show'); });
+window.addEventListener('dragleave', (e) => { e.preventDefault(); dragCounter--; if (dragCounter === 0 && dropOverlay) dropOverlay.classList.remove('show'); });
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => { e.preventDefault(); dragCounter = 0; if (dropOverlay) dropOverlay.classList.remove('show'); if (e.dataTransfer.files && e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]); });
 
-window.addEventListener('dragenter', (e) => {
-  e.preventDefault();
-  dragCounter++;
-  if (dropOverlay) dropOverlay.classList.add('show');
-});
-
-window.addEventListener('dragleave', (e) => {
-  e.preventDefault();
-  dragCounter--;
-  if (dragCounter === 0 && dropOverlay) {
-    dropOverlay.classList.remove('show');
+// Audio Player
+outAudio.addEventListener('timeupdate', () => {
+  if (outAudio.duration) {
+    const percentage = (outAudio.currentTime / outAudio.duration) * 100;
+    audioProgressBar.style.width = percentage + '%';
   }
 });
+outAudio.addEventListener('ended', () => audioProgressBar.style.width = '0%');
 
-window.addEventListener('dragover', (e) => {
-  e.preventDefault();
-});
-
-window.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dragCounter = 0;
-  if (dropOverlay) dropOverlay.classList.remove('show');
-
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    processFile(e.dataTransfer.files[0]);
-  }
-});
-
-// ==========================================
-// Prompt Engineering & API Execution
-// ==========================================
+// Main Execution
 if (generateBtn) {
   generateBtn.addEventListener('click', () => {
     showStep('loading');
+
+    document.querySelectorAll('.loader-text, .circular-loader').forEach(el => el.classList.remove('done'));
+    if (statusImage) statusImage.innerText = "GENERATING IMAGE & DEPTH...";
+    if (statusAudio) statusAudio.innerText = "GENERATING AUDIO...";
 
     const foods = Array.from(selections.food);
     const tastes = Array.from(selections.taste);
     const genres = Array.from(selections.genre);
 
-    const cFood = commentsFood ? commentsFood.value.trim() : "";
-    const cTaste = commentsTaste ? commentsTaste.value.trim() : "";
-    const cGenre = commentsGenre ? commentsGenre.value.trim() : "";
-
     const foodStr = foods.length > 0 ? foods.join(", ") : "generic food";
     const tasteStr = tastes.length > 0 ? tastes.join(", ") : "delicious";
     const genreStr = genres.length > 0 ? genres[0] : "Jazz";
 
-    const foodDetail = cFood ? ` (${cFood})` : "";
-    const tasteDetail = cTaste ? ` (${cTaste})` : "";
-    const genreDetail = cGenre ? ` (${cGenre})` : "";
-
+    const genreDetail = commentsGenre ? ` (${commentsGenre.value.trim()})` : "";
     const instruments = INSTRUMENT_MAP[genreStr] || 'various musical instruments';
 
-    const imagePrompt = `the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed. tiny food-shape musicians are generated based on ${foodStr}${foodDetail} and performing as a small cozy band across a food landscape. cute miniature ${foodStr} characters playing ${instruments}${genreDetail}. The overall atmosphere has a ${tasteStr}${tasteDetail} and ${genreStr} vibe, passionate and dynamic performance.`;
+    const imagePrompt = `the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed. tiny food-shape musicians are generated based on ${foodStr} and performing as a small cozy band across a food landscape. cute miniature ${foodStr} characters playing ${instruments}${genreDetail}. The overall atmosphere has a ${tasteStr} and ${genreStr} vibe, passionate and dynamic performance.`;
 
-    const audioPrompt = `A highly rhythmic, energetic track with a strong driving beat. Style: ${genreStr}${genreDetail}. Vibe and mood: ${tasteStr}${tasteDetail}. Inspired by a culinary experience of ${foodStr}${foodDetail}.`;
+    const audioPrompt = `A highly rhythmic, energetic track with a strong driving beat. Style: ${genreStr}${genreDetail}. Vibe and mood: ${tasteStr}. Inspired by a culinary experience of ${foodStr}.`;
 
     let lyricsArray = [...foods];
     const paddingWords = ['Tasty', 'Fresh', 'Savory', 'Bite'];
     let i = 0;
-    while (lyricsArray.length < 4) {
-      lyricsArray.push(paddingWords[i % paddingWords.length]);
-      i++;
-    }
+    while (lyricsArray.length < 4) { lyricsArray.push(paddingWords[i % paddingWords.length]); i++; }
     const finalLyrics = lyricsArray.slice(0, 4).join("\n");
 
-    // Initialize base timestamp for this audition session
+    const audioSettings = determineAudioSettings(selections.taste);
+
     currentSessionTimestamp = getFormattedTimestamp();
 
-    // ComfyUI will automatically create the subfolder and append _00001, _00002 for duplicates
     const payloadImage = {
       promptText: imagePrompt,
       seed: Math.floor(Math.random() * 1000000),
       referenceImage: currentBase64Image,
-      filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-image`
+      filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}`
     };
 
     const payloadAudio = {
       promptText: audioPrompt,
       lyrics: finalLyrics,
       seed: Math.floor(Math.random() * 1000000),
+      bpm: audioSettings.bpm,
+      keyscale: audioSettings.keyscale,
       filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-audio`
     };
 
-    console.log("[Prompt] Image:", imagePrompt);
-    console.log("[Prompt] Audio:", audioPrompt);
-
-    outImage.src = "";
-    outAudio.src = "";
-    audioProgressBar.style.width = '0%';
-
     Promise.all([
-      fetchImage(payloadImage),
-      fetchAudio(payloadAudio)
-    ]).then(([imgDataUri, audioDataUri]) => {
-      if (imgDataUri && audioDataUri) {
-        outImage.src = imgDataUri;
-        outAudio.src = audioDataUri;
+      fetchMedia('/api/generate-image', payloadImage, 'image'),
+      fetchMedia('/api/generate-audio', payloadAudio, 'audio')
+    ]).then(([imageData, audioDataURI]) => {
+      if (imageData && imageData.success && audioDataURI) {
+
+        outImage.src = imageData.imageDataURI;
+        outAudio.src = audioDataURI;
+
+        if (statusImage) statusImage.innerText = "IMAGE & DEPTH READY";
+        if (statusAudio) statusAudio.innerText = "AUDIO READY";
 
         showStep('result');
         outAudio.play();
 
-        initThreeJSPlane(imgDataUri);
-
+        initThreeJSShader(imageData.imageDataURI, imageData.depthDataURI);
         runContinuousImageRegeneration(imagePrompt);
       } else {
-        alert("Generation failed. Please check the server logs.");
+        alert("Generation failed. Check server logs.");
         showStep(0);
       }
     });
   });
 }
 
-// ==========================================
-// Network Requests (Initial Generation)
-// ==========================================
-async function fetchImage(payload) {
+// Network Requests
+async function fetchMedia(endpoint, payload, type) {
   try {
-    const res = await fetch('/api/generate-image', {
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     const result = await res.json();
 
-    const loaderImage = document.getElementById('loader-image');
-    const statusImage = document.getElementById('status-image');
-    if (loaderImage) loaderImage.classList.add('done');
-    if (statusImage) {
-      statusImage.classList.add('done');
-      statusImage.innerText = "IMAGE READY";
+    const loaderId = type === 'image' ? 'loader-image' : 'loader-audio';
+    document.getElementById(loaderId)?.classList.add('done');
+    document.getElementById(`status-${type}`)?.classList.add('done');
+
+    if (!result.success) {
+      console.error(`[Fetch Error - ${type}]`, result.error);
+      return null;
     }
 
-    return result.success ? result.dataURI : null;
+    return type === 'image' ? result : result.dataURI;
+
   } catch (err) {
-    console.error("Fetch Error (Image):", err);
+    console.error(`[Fetch Error - ${type}]`, err);
     return null;
   }
 }
 
-async function fetchAudio(payload) {
-  try {
-    const res = await fetch('/api/generate-audio', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const result = await res.json();
-
-    const loaderAudio = document.getElementById('loader-audio');
-    const statusAudio = document.getElementById('status-audio');
-    if (loaderAudio) loaderAudio.classList.add('done');
-    if (statusAudio) {
-      statusAudio.classList.add('done');
-      statusAudio.innerText = "AUDIO READY";
-    }
-
-    return result.success ? result.dataURI : null;
-  } catch (err) {
-    console.error("Fetch Error (Audio):", err);
-    return null;
-  }
-}
-
-// ==========================================
-// Continuous Image Regeneration Loop
-// ==========================================
+// Continuous Image Loop
 async function runContinuousImageRegeneration(originalPrompt) {
   const resultStep = document.getElementById('step-result');
-
   if (!resultStep || resultStep.classList.contains('hidden')) {
     if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
     return;
   }
 
   const resultBase64Input = outImage.src;
-
-  const movementAugmentation = ", high-energy action performance, characters captured mid-air, jumping, dancing wildly, extreme dynamic poses, wild instrument gestures, intense facial expressions, sweat dripping, motion blur on limbs, energetic stage presence, dramatic camera pan right, rotating view to the right, dynamic perspective shift revealing the right side of the scene, dynamic camera zooming in on one specific character, shallow depth of field, flashy lighting, dramatic light shifts, stark contrast between light and shadow, chiaroscuro, strobe lights, pulsating colors, rapid changes from dark to bright, moody atmosphere with brilliant highlights";
-
+  const movementAugmentation = ", high-energy action performance, energetic stage presence, dramatic camera pan right";
   const hyperDynamicPrompt = originalPrompt + movementAugmentation;
 
-  // Passing the exact same prefix. ComfyUI will handle the incremental numbering.
+  // Send only the base prefix
   const nextPayload = {
     promptText: hyperDynamicPrompt,
     seed: Math.floor(Math.random() * 1000000),
     referenceImage: resultBase64Input,
-    filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-image`
+    filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}`
   };
 
   if (reloadingSpinner) reloadingSpinner.classList.remove('hidden');
 
   try {
-    console.log("[Loop] Requesting next iteration...");
-    const nextDataURI = await fetchNextImageIteration(nextPayload);
+    const loopRes = await fetch('/api/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nextPayload)
+    });
+    const loopResult = await loopRes.json();
 
-    if (nextDataURI) {
-      outImage.src = nextDataURI;
-      console.log("[Loop] Iteration updated.");
-
-      initThreeJSPlane(nextDataURI);
+    if (loopResult.success && loopResult.imageDataURI) {
+      outImage.src = loopResult.imageDataURI;
+      initThreeJSShader(loopResult.imageDataURI, null);
     }
   } catch (err) {
-    console.error("[Loop] Image regeneration failed. Stopping loop.", err);
-    if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
-    return;
+    console.error("[Loop] Failed.", err);
   }
 
   if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
-
-  setTimeout(() => {
-    runContinuousImageRegeneration(originalPrompt);
-  }, 100);
+  setTimeout(() => runContinuousImageRegeneration(originalPrompt), 200);
 }
 
-async function fetchNextImageIteration(payload) {
-  try {
-    const res = await fetch('/api/generate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const result = await res.json();
-
-    if (!result.success || !result.dataURI) {
-      throw new Error(result.error || "Loop generation returned unsuccessful");
-    }
-
-    return result.dataURI;
-  } catch (err) {
-    throw err;
-  }
-}
-
-// ==========================================
-// Three.js Integration Hook
-// ==========================================
-function initThreeJSPlane(imageURI) {
-  console.log("Passing new image to Three.js...");
+// Shader Integration Hook
+function initThreeJSShader(imageURI, depthURI) {
   if (window.updateThreeJSMaterial) {
-    window.updateThreeJSMaterial(imageURI);
+    window.updateThreeJSMaterial(imageURI, depthURI);
   }
 }
 
-// Run setup
 init();

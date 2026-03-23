@@ -5,19 +5,16 @@ let ui = {
 };
 
 let cube;
-let ball;
 
 function setupThree() {
-  ball = getSphere();
-  scene.add(ball);
-  ball.scale.set(10, 10, 10);
-  ball.position.set(100, 0, 0);
-
   cube = getBox();
   scene.add(cube);
   cube.scale.x = 100;
   cube.scale.y = 100;
   cube.scale.z = 100;
+
+  // Call the external wrapper to setup shaders
+  setupShaders(scene, ui.depthScale);
 }
 
 function updateThree() {
@@ -30,7 +27,7 @@ function updateThree() {
   cube.rotation.x += 0.01;
   cube.rotation.y += 0.009;
   cube.rotation.z += 0.008;
-}
 
-// Expose to window so UI script can call it
-window.updateThreeJSMaterial = updateThreeJSMaterial;
+  // Call the external wrapper to update shaders every frame
+  updateShaders(time, ui.depthScale);
+}

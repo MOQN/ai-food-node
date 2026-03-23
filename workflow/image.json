@@ -1,7 +1,7 @@
 {
   "76": {
     "inputs": {
-      "image": "man_in_street.png"
+      "image": "mcdonalds-burger-lead.jpg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -10,7 +10,7 @@
   },
   "94": {
     "inputs": {
-      "filename_prefix": "Flux2_Klein_9b_kv",
+      "filename_prefix": "AIxFood/image",
       "images": [
         "124",
         0
@@ -76,7 +76,7 @@
   },
   "125": {
     "inputs": {
-      "noise_seed": 720512742793301
+      "noise_seed": 748789875302425
     },
     "class_type": "RandomNoise",
     "_meta": {
@@ -137,7 +137,7 @@
       "megapixels": 1,
       "resolution_steps": 1,
       "image": [
-        "76",
+        "696",
         0
       ]
     },
@@ -159,7 +159,7 @@
   },
   "135": {
     "inputs": {
-      "text": "tiny monster musicians performing as a small cozy band across a food landscape, cute miniature monsters playing soft jazz instruments, a band with warm and relaxed vibes\n\none monster plays a tiny saxophone while sitting on a curved strand, another taps gentle rhythms on a small drum made from a bowl lid, one strums a tiny guitar, another monster sings into a microphone made from a chopstick\n\nthe food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed",
+      "text": "the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed,\n\ntiny blobby musicians are generated based on the ingredients of the dish and performing as a small cozy band across a food landscape, cute miniatures playing soft jazz instruments",
       "clip": [
         "133",
         0
@@ -230,6 +230,67 @@
     "class_type": "ConditioningZeroOut",
     "_meta": {
       "title": "ConditioningZeroOut"
+    }
+  },
+  "693": {
+    "inputs": {
+      "normalization_mode": "V2-Style",
+      "resize_method": "resize",
+      "invert_depth": true,
+      "keep_model_size": false,
+      "da3_model": [
+        "695",
+        0
+      ],
+      "images": [
+        "124",
+        0
+      ]
+    },
+    "class_type": "DepthAnything_V3",
+    "_meta": {
+      "title": "Depth Anything V3"
+    }
+  },
+  "695": {
+    "inputs": {
+      "model": "da3mono_large.safetensors",
+      "precision": "auto"
+    },
+    "class_type": "DownloadAndLoadDepthAnythingV3Model",
+    "_meta": {
+      "title": "(down)Load Depth Anything V3 Model"
+    }
+  },
+  "696": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "interpolation": "nearest",
+      "method": "fill / crop",
+      "condition": "always",
+      "multiple_of": 0,
+      "image": [
+        "76",
+        0
+      ]
+    },
+    "class_type": "ImageResize+",
+    "_meta": {
+      "title": "🔧 Image Resize"
+    }
+  },
+  "698": {
+    "inputs": {
+      "filename_prefix": "AIxFood/image",
+      "images": [
+        "693",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
     }
   },
   "134:116": {
