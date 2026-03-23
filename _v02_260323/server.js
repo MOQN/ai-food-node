@@ -26,7 +26,6 @@ const rawAudioTemplate = fs.readFileSync(audioWorkflowPath, 'utf8');
 
 // Increase JSON payload limit to accept large Base64 image strings from frontend
 app.use(express.json({ limit: '50mb' }));
-app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')));
 app.use(express.static('public'));
 
 /**
