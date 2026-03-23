@@ -17,6 +17,7 @@
   --border-color: #333333;
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --border-width: 1px;
+  --result-image-scale: 0.7;
 }
 
 body {
@@ -311,6 +312,11 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+#out-image-box {
+  width: calc(400px * var(--result-image-scale));
+  height: calc(400px * var(--result-image-scale));
 }
 
 .overlay-spinner {

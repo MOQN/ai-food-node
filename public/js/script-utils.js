@@ -12,15 +12,3 @@ function getSphere() {
   const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
   return new THREE.Mesh(geometry, material);
 }
-
-// 🌟 Hook to receive generated image from script-ui.js
-function updateThreeJSMaterial(imageURI) {
-  const loader = new THREE.TextureLoader();
-  loader.load(imageURI, (texture) => {
-    // Apply the generated AI image to the spinning cube
-    cube.material.map = texture;
-    cube.material.color.set(0xffffff); // Reset base color so image looks correct
-    cube.material.needsUpdate = true;
-    console.log("🎨 Three.js updated with new API image texture!");
-  });
-}

@@ -65,15 +65,12 @@ function determineAudioSettings(selectedTastes) {
 const dropOverlay = document.getElementById('drop-overlay');
 const fileInput = document.getElementById('file-input');
 const generateBtn = document.getElementById('generate-btn');
-const wizardPanel = document.getElementById('wizard-panel');
 
 const outImage = document.getElementById('out-image');
 const outAudio = document.getElementById('out-audio');
 const audioProgressBar = document.getElementById('audio-progress-bar');
 const statusImage = document.getElementById('status-image');
 const statusAudio = document.getElementById('status-audio');
-
-const reloadingSpinner = document.getElementById('reloading-spinner');
 
 const commentsFood = document.getElementById('comments-food');
 const commentsTaste = document.getElementById('comments-taste');
@@ -178,8 +175,8 @@ if (generateBtn) {
     showStep('loading');
 
     document.querySelectorAll('.loader-text, .circular-loader').forEach(el => el.classList.remove('done'));
-    if (statusImage) statusImage.innerText = "GENERATING IMAGE & DEPTH...";
-    if (statusAudio) statusAudio.innerText = "GENERATING AUDIO...";
+    if (statusImage) statusImage.innerText = "VISUAL";
+    if (statusAudio) statusAudio.innerText = "AUDIO";
 
     const foods = Array.from(selections.food);
     const tastes = Array.from(selections.taste);
@@ -294,8 +291,6 @@ async function runContinuousImageRegeneration(originalPrompt) {
     filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}`
   };
 
-  if (reloadingSpinner) reloadingSpinner.classList.remove('hidden');
-
   try {
     const loopRes = await fetch('/api/generate-image', {
       method: 'POST',
@@ -312,8 +307,7 @@ async function runContinuousImageRegeneration(originalPrompt) {
     console.error("[Loop] Failed.", err);
   }
 
-  if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
-  setTimeout(() => runContinuousImageRegeneration(originalPrompt), 200);
+  setTimeout(() => runContinuousImageRegeneration(originalPrompt), 1000);
 }
 
 // Shader Integration Hook
