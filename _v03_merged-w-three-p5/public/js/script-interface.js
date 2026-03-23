@@ -20,13 +20,7 @@ const INSTRUMENT_MAP = {
 };
 
 // ==========================================
-// Output File Settings
-// ==========================================
-// Change this variable to route saved files to a specific ComfyUI subfolder
-const OUTPUT_FOLDER = "AIxFood";
-
-// ==========================================
-// State Management & File Naming
+// State Management
 // ==========================================
 let currentBase64Image = null;
 let isGeneratingImage = false;
@@ -37,21 +31,6 @@ const selections = {
   taste: new Set(),
   genre: new Set()
 };
-
-let currentSessionTimestamp = "";
-
-// Returns timestamp in format: yymmdd-hhmmss
-function getFormattedTimestamp() {
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const hh = String(now.getHours()).padStart(2, '0');
-  const min = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-
-  return `${yy}${mm}${dd}-${hh}${min}${ss}`;
-}
 
 // ==========================================
 // DOM Elements
@@ -67,6 +46,7 @@ const audioProgressBar = document.getElementById('audio-progress-bar');
 const loadingIndicator = document.getElementById('loading-indicator');
 const statusText = document.getElementById('status-text');
 
+// Reference to the new continuous loop spinner
 const reloadingSpinner = document.getElementById('reloading-spinner');
 
 const commentsFood = document.getElementById('comments-food');
@@ -94,9 +74,11 @@ outAudio.addEventListener('ended', () => {
 function showStep(stepIndex) {
   document.querySelectorAll('.step').forEach(step => {
     if (step.id === `step-${stepIndex}`) {
+      // Show the new target screen smoothly
       step.classList.remove('hidden');
       setTimeout(() => step.classList.add('active'), 50);
     } else {
+      // Hide the existing screen and wait for the CSS transition to finish
       step.classList.remove('active');
       setTimeout(() => {
         if (!step.classList.contains('active')) {
@@ -107,6 +89,7 @@ function showStep(stepIndex) {
   });
 }
 
+// Attach event listeners to all NEXT buttons
 document.querySelectorAll('.next-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     const nextStep = e.target.getAttribute('data-next');
@@ -120,8 +103,9 @@ document.querySelectorAll('.next-btn').forEach(btn => {
 function init() {
   buildTagButtons('tags-food', TAG_DATA.food, 'food', '1');
   buildTagButtons('tags-taste', TAG_DATA.taste, 'taste', '2');
-  buildTagButtons('tags-genre', TAG_DATA.genre, 'genre', '3', true);
+  buildTagButtons('tags-genre', TAG_DATA.genre, 'genre', '3', true); // Single select for genre
 
+  // Reload the page to start a fresh audition
   const restartBtn = document.getElementById('restart-btn');
   if (restartBtn) {
     restartBtn.addEventListener('click', () => {
@@ -153,6 +137,7 @@ function buildTagButtons(containerId, items, category, stepNum, isSingleSelect =
         else selections[category].delete(item);
       }
 
+      // Enable the NEXT button only if at least 1 tag is selected
       if (nextBtn) {
         nextBtn.disabled = selections[category].size === 0;
       }
@@ -173,11 +158,13 @@ function processFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     currentBase64Image = e.target.result;
+    // Proceed directly to Step 1.
     showStep(1);
   };
   reader.readAsDataURL(file);
 }
 
+// Click to upload
 const chooseFileBtn = document.getElementById('choose-file-btn');
 if (chooseFileBtn) {
   chooseFileBtn.addEventListener('click', () => fileInput.click());
@@ -189,6 +176,7 @@ if (fileInput) {
   });
 }
 
+// Bulletproof drag-and-drop defense logic
 let dragCounter = 0;
 
 window.addEventListener('dragenter', (e) => {
@@ -200,6 +188,7 @@ window.addEventListener('dragenter', (e) => {
 window.addEventListener('dragleave', (e) => {
   e.preventDefault();
   dragCounter--;
+  // Only hide overlay when the cursor fully leaves the browser window
   if (dragCounter === 0 && dropOverlay) {
     dropOverlay.classList.remove('show');
   }
@@ -224,6 +213,7 @@ window.addEventListener('drop', (e) => {
 // ==========================================
 if (generateBtn) {
   generateBtn.addEventListener('click', () => {
+    // Move to the loading screen
     showStep('loading');
 
     const foods = Array.from(selections.food);
@@ -244,10 +234,12 @@ if (generateBtn) {
 
     const instruments = INSTRUMENT_MAP[genreStr] || 'various musical instruments';
 
+    // Construct final prompts
     const imagePrompt = `the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed. tiny food-shape musicians are generated based on ${foodStr}${foodDetail} and performing as a small cozy band across a food landscape. cute miniature ${foodStr} characters playing ${instruments}${genreDetail}. The overall atmosphere has a ${tasteStr}${tasteDetail} and ${genreStr} vibe, passionate and dynamic performance.`;
 
     const audioPrompt = `A highly rhythmic, energetic track with a strong driving beat. Style: ${genreStr}${genreDetail}. Vibe and mood: ${tasteStr}${tasteDetail}. Inspired by a culinary experience of ${foodStr}${foodDetail}.`;
 
+    // Extract 4 lyric words for audio model
     let lyricsArray = [...foods];
     const paddingWords = ['Tasty', 'Fresh', 'Savory', 'Bite'];
     let i = 0;
@@ -257,31 +249,27 @@ if (generateBtn) {
     }
     const finalLyrics = lyricsArray.slice(0, 4).join("\n");
 
-    // Initialize base timestamp for this audition session
-    currentSessionTimestamp = getFormattedTimestamp();
-
-    // ComfyUI will automatically create the subfolder and append _00001, _00002 for duplicates
     const payloadImage = {
       promptText: imagePrompt,
       seed: Math.floor(Math.random() * 1000000),
-      referenceImage: currentBase64Image,
-      filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-image`
+      referenceImage: currentBase64Image
     };
 
     const payloadAudio = {
       promptText: audioPrompt,
       lyrics: finalLyrics,
-      seed: Math.floor(Math.random() * 1000000),
-      filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-audio`
+      seed: Math.floor(Math.random() * 1000000)
     };
 
-    console.log("[Prompt] Image:", imagePrompt);
-    console.log("[Prompt] Audio:", audioPrompt);
+    console.log("Image Prompt:", imagePrompt);
+    console.log("Audio Prompt:", audioPrompt);
 
+    // Clear previous results
     outImage.src = "";
     outAudio.src = "";
     audioProgressBar.style.width = '0%';
 
+    // Execute both generations concurrently
     Promise.all([
       fetchImage(payloadImage),
       fetchAudio(payloadAudio)
@@ -293,8 +281,10 @@ if (generateBtn) {
         showStep('result');
         outAudio.play();
 
+        // Trigger Three.js environment setup
         initThreeJSPlane(imgDataUri);
 
+        // 🌟 START THE INFINITE LOOP 🌟
         runContinuousImageRegeneration(imagePrompt);
       } else {
         alert("Generation failed. Please check the server logs.");
@@ -316,6 +306,7 @@ async function fetchImage(payload) {
     });
     const result = await res.json();
 
+    // Update circular loader UI to indicate completion
     const loaderImage = document.getElementById('loader-image');
     const statusImage = document.getElementById('status-image');
     if (loaderImage) loaderImage.classList.add('done');
@@ -340,6 +331,7 @@ async function fetchAudio(payload) {
     });
     const result = await res.json();
 
+    // Update circular loader UI to indicate completion
     const loaderAudio = document.getElementById('loader-audio');
     const statusAudio = document.getElementById('status-audio');
     if (loaderAudio) loaderAudio.classList.add('done');
@@ -356,41 +348,58 @@ async function fetchAudio(payload) {
 }
 
 // ==========================================
-// Continuous Image Regeneration Loop
+// 🌟 Continuous Image Regeneration Loop 🌟
 // ==========================================
+/**
+ * Executes an infinite recursive loop that generates new images 
+ * using the previously generated result as input.
+ * Modified to force highly dynamic movement for subsequent generations.
+ * @param {string} originalPrompt - The original visual prompt text.
+ */
 async function runContinuousImageRegeneration(originalPrompt) {
   const resultStep = document.getElementById('step-result');
 
+  // Safety check: Stop the loop if we are not on the result step anymore
   if (!resultStep || resultStep.classList.contains('hidden')) {
     if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
     return;
   }
 
+  // 1. Get the current result image Base64 to use as input
   const resultBase64Input = outImage.src;
 
+  // 🌟 🌟 🌟 MODIFICATION START: Augmenting for dynamic movement 🌟 🌟 🌟
+
+  // Construct a specific "dynamic movement" prompt to append.
+  // We emphasize jumping, dancing, wild gestures, and sweat to force drastic pose changes.
   const movementAugmentation = ", high-energy action performance, characters captured mid-air, jumping, dancing wildly, extreme dynamic poses, wild instrument gestures, intense facial expressions, sweat dripping, motion blur on limbs, energetic stage presence, dramatic camera pan right, rotating view to the right, dynamic perspective shift revealing the right side of the scene, dynamic camera zooming in on one specific character, shallow depth of field, flashy lighting, dramatic light shifts, stark contrast between light and shadow, chiaroscuro, strobe lights, pulsating colors, rapid changes from dark to bright, moody atmosphere with brilliant highlights";
 
+  // Combine original prompt with the movement modification
   const hyperDynamicPrompt = originalPrompt + movementAugmentation;
 
-  // Passing the exact same prefix. ComfyUI will handle the incremental numbering.
+  // console.log("[Loop] Augmented Prompt:", hyperDynamicPrompt); // Debugging
+
+  // 🌟 🌟 🌟 MODIFICATION END 🌟 🌟 🌟
+
+  // 2. Construct payload using result image, new random seed, and HYPER-DYNAMIC prompt
   const nextPayload = {
-    promptText: hyperDynamicPrompt,
-    seed: Math.floor(Math.random() * 1000000),
-    referenceImage: resultBase64Input,
-    filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-image`
+    promptText: hyperDynamicPrompt, // 🌟 Now uses the augmented prompt for movement
+    seed: Math.floor(Math.random() * 1000000), // New seed is crucial for pose changes
+    referenceImage: resultBase64Input // Feed result back
   };
 
+  // 3. Show circular loader over the current image
   if (reloadingSpinner) reloadingSpinner.classList.remove('hidden');
 
   try {
-    console.log("[Loop] Requesting next iteration...");
+    console.log("[Loop] Requesting next dynamic image iteration...");
+    // 4. Request image generation
     const nextDataURI = await fetchNextImageIteration(nextPayload);
 
     if (nextDataURI) {
+      // 5. Update the image on screen with the new dynamic result
       outImage.src = nextDataURI;
-      console.log("[Loop] Iteration updated.");
-
-      initThreeJSPlane(nextDataURI);
+      console.log("[Loop] Dynamic image updated.");
     }
   } catch (err) {
     console.error("[Loop] Image regeneration failed. Stopping loop.", err);
@@ -398,13 +407,18 @@ async function runContinuousImageRegeneration(originalPrompt) {
     return;
   }
 
+  // 6. Hide loader after success
   if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
 
+  // 7. Briefly pause for UX/API stability, then make recursive call
   setTimeout(() => {
     runContinuousImageRegeneration(originalPrompt);
-  }, 100);
+  }, 100); // 100ms pause
 }
 
+/**
+ * Specialized network helper for the regeneration loop.
+ */
 async function fetchNextImageIteration(payload) {
   try {
     const res = await fetch('/api/generate-image', {
@@ -428,10 +442,13 @@ async function fetchNextImageIteration(payload) {
 // Three.js Integration Hook
 // ==========================================
 function initThreeJSPlane(imageURI) {
-  console.log("Passing new image to Three.js...");
+  console.log("====================================");
+  console.log("🎬 Passing new image to Three.js...");
+  // Call the global function defined in main.js
   if (window.updateThreeJSMaterial) {
     window.updateThreeJSMaterial(imageURI);
   }
+  console.log("====================================");
 }
 
 // Run setup
