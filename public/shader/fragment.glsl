@@ -1,19 +1,32 @@
+// fragment.glsl
 uniform sampler2D tColor;
 
 varying vec2 vSampleUv;
 varying vec2 vLocalUv;
-varying float vTransition;
+varying float vTransition;// This can be negative now
 
 void main(){
     vec4 texColor=texture2D(tColor,vSampleUv);
+    vec3 baseColor=texColor.rgb;
+    if(texColor.a>.0001){
+        baseColor=clamp(texColor.rgb/texColor.a,0.,1.);
+    }
     
     vec2 centered=vLocalUv-.5;
     float dist=length(centered);
     
-    float softCircle=1.-smoothstep(.38,.5,dist);
-    float alpha=texColor.a*softCircle*smoothstep(0.,.15,vTransition);
+    // Hard circular cut (scissor-like edge)
+    float hardCircle=step(dist,.46);
     
-    if(alpha<.01)discard;
+    // MODIFIED: Use abs(vTransition) so it doesn't disappear when negative.
+    // Also, we want it to be fully opaque when vTransition is 0.
+    // This logic makes it slightly transparent as it scatters (away from 0).
+    float transitionFactor=smoothstep(0.,.5,abs(vTransition));
+    float alpha=texColor.a*hardCircle*(1.-transitionFactor*.5);
     
-    gl_FragColor=vec4(texColor.rgb,alpha);
+    // Trim low-alpha fringe to avoid dark outlines
+    if(alpha<.02)discard;
+    
+    // Premultiplied output with corrected base color helps remove dark edge halo.
+    gl_FragColor=vec4(baseColor*alpha,alpha);
 }

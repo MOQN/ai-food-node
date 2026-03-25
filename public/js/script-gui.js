@@ -1,4 +1,9 @@
 let pane;
+let ui = {
+  fps: 0,
+  depthScale: 120,
+  meshTilt: -0.30
+};
 
 function setupGUI() {
   pane = new Pane();

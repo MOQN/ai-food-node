@@ -19,6 +19,58 @@ const INSTRUMENT_MAP = {
 
 const OUTPUT_FOLDER = "AIxFood";
 
+// ==========================================
+// History Management & Band Class
+// ==========================================
+let historyGrid = [];
+
+class Band {
+  constructor(id, colorUri, depthUri, soundUri) {
+    this.id = id;
+    this.colorUri = colorUri;
+    this.depthUri = depthUri;
+    this.soundUri = soundUri;
+    this.meshGroup = null; // Will hold the Plane meshes
+  }
+
+  // Generate the plane mesh with border immediately upon creation
+  buildPlaneMesh() {
+    if (!window.THREE) {
+      console.warn("THREE.js is not loaded yet.");
+      return;
+    }
+
+    // 1. Inner Plane (The generated image)
+    const textureLoader = new window.THREE.TextureLoader();
+    const map = textureLoader.load(this.colorUri);
+    // Flux images are square by default, size arbitrarily set to 100 for 3D space
+    const innerGeo = new window.THREE.PlaneGeometry(100, 100);
+    const innerMat = new window.THREE.MeshBasicMaterial({
+      map: map,
+      side: window.THREE.DoubleSide
+    });
+    const innerMesh = new window.THREE.Mesh(innerGeo, innerMat);
+
+    // 2. Outer Plane (The border/frame)
+    // Slightly larger than the inner plane to create a frame effect
+    const outerGeo = new window.THREE.PlaneGeometry(106, 106);
+    const outerMat = new window.THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: window.THREE.DoubleSide
+    });
+    const outerMesh = new window.THREE.Mesh(outerGeo, outerMat);
+    outerMesh.position.z = -0.5; // Push slightly back so it sits behind the image
+
+    // 3. Group them together
+    const group = new window.THREE.Group();
+    group.add(outerMesh);
+    group.add(innerMesh);
+
+    // Store the finalized mesh group in this class instance
+    this.meshGroup = group;
+  }
+}
+
 // State Management
 let currentBase64Image = null;
 let currentSessionTimestamp = "";
@@ -225,6 +277,20 @@ if (generateBtn) {
     ]).then(([imageData, audioDataURI]) => {
       if (imageData && imageData.success && audioDataURI) {
 
+        // 1. Create Band instance and generate Plane Meshes
+        const newBand = new Band(
+          currentSessionTimestamp,
+          imageData.imageDataURI,
+          imageData.depthDataURI,
+          audioDataURI
+        );
+        newBand.buildPlaneMesh(); // This creates the bordered plane group
+
+        // 2. Add to global history
+        historyGrid.push(newBand);
+        console.log("Total Bands in History:", historyGrid.length);
+
+        // 3. Update DOM elements
         outImage.src = imageData.imageDataURI;
         outAudio.src = audioDataURI;
 
@@ -234,6 +300,7 @@ if (generateBtn) {
         showStep('result');
         outAudio.play();
 
+        // Pass URIs to the shader material update logic (for the 2.5D background effect)
         initThreeJSShader(imageData.imageDataURI, imageData.depthDataURI);
         runContinuousImageRegeneration(imagePrompt);
       } else {
@@ -275,7 +342,6 @@ async function fetchMedia(endpoint, payload, type) {
 async function runContinuousImageRegeneration(originalPrompt) {
   const resultStep = document.getElementById('step-result');
   if (!resultStep || resultStep.classList.contains('hidden')) {
-    if (reloadingSpinner) reloadingSpinner.classList.add('hidden');
     return;
   }
 
@@ -283,7 +349,6 @@ async function runContinuousImageRegeneration(originalPrompt) {
   const movementAugmentation = ", high-energy action performance, energetic stage presence, dramatic camera pan right";
   const hyperDynamicPrompt = originalPrompt + movementAugmentation;
 
-  // Send only the base prefix
   const nextPayload = {
     promptText: hyperDynamicPrompt,
     seed: Math.floor(Math.random() * 1000000),
@@ -301,15 +366,11 @@ async function runContinuousImageRegeneration(originalPrompt) {
 
     if (loopResult.success && loopResult.imageDataURI) {
       outImage.src = loopResult.imageDataURI;
-
-      // Re-apply both the new color image and the newly generated depth map
       initThreeJSShader(loopResult.imageDataURI, loopResult.depthDataURI);
     }
   } catch (err) {
     console.error("[Loop] Failed.", err);
   }
-
-  //setTimeout(() => runContinuousImageRegeneration(originalPrompt), 1000);
 }
 
 // Shader Integration Hook
@@ -320,9 +381,6 @@ function initThreeJSShader(imageURI, depthURI) {
 }
 
 init();
-
-
-
 
 // to test
 async function loadShaderTestImages() {
@@ -343,10 +401,7 @@ async function loadShaderTestImages() {
     }
   };
 
-  // Wait a bit longer so setupShaders() can finish creating customMaterial
   setTimeout(applyWhenReady, 300);
 }
 
-window.addEventListener('load', () => {
-  loadShaderTestImages();
-});
+window.loadShaderTestImages = loadShaderTestImages;
