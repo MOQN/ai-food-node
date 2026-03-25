@@ -182,7 +182,7 @@ app.post('/api/generate-image', async (req, res) => {
 
 // API Endpoint 2: Generate Audio
 app.post('/api/generate-audio', async (req, res) => {
-  const { promptText, lyrics, seed, bpm, keyscale, filePrefix } = req.body;
+  const { promptText, lyrics, seed, bpm, keyscale, durationSeconds, filePrefix } = req.body;
   if (!promptText) return res.status(400).json({ error: "Missing promptText." });
 
   try {
@@ -195,6 +195,13 @@ app.post('/api/generate-audio', async (req, res) => {
 
     workflow["94"]["inputs"]["bpm"] = bpm || 190;
     workflow["94"]["inputs"]["keyscale"] = keyscale || "E minor";
+
+    const safeDuration = Math.min(240, Math.max(30, Number(durationSeconds) || 120));
+    console.log(`[Audio] durationSeconds received: ${durationSeconds} → safeDuration: ${safeDuration}`);
+    workflow["94"]["inputs"]["duration"] = safeDuration;
+    workflow["98"]["inputs"]["seconds"] = safeDuration;
+    console.log(`[Audio] workflow["94"]["inputs"]["duration"]: ${workflow["94"]["inputs"]["duration"]}`);
+    console.log(`[Audio] workflow["98"]["inputs"]["seconds"]: ${workflow["98"]["inputs"]["seconds"]}`);
 
     workflow["3"]["inputs"]["seed"] = currentSeed;
 

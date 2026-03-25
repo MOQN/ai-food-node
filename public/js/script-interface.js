@@ -2,7 +2,9 @@
 const TAG_DATA = {
   food: ['Noodles', 'Dessert', 'Pasta', 'Hotpot', 'Strawberry', 'Cream', 'Chili Powder', 'Sushi', 'Burger', 'Steak', 'Chocolate'],
   taste: ['Spicy', 'Creamy', 'Sweet', 'Refreshing', 'Greasy', 'Clean', 'Savory', 'Sour', 'Bitter'],
-  genre: ['K-Pop', 'Rock', 'R&B', 'Rap', 'Chinese Classical', 'Jazz', 'EDM', 'Acoustic', 'Heavy Metal']
+  genre: ['K-Pop', 'Rock', 'R&B', 'Rap', 'Chinese Classical', 'Jazz', 'EDM', 'Acoustic', 'Heavy Metal'],
+  moodSpeed: ['Chill & Slow', 'Steady & Medium', 'Upbeat & Fast', 'Hyper & Super Fast'],
+  moodVibe: ['A Bit Melancholic', 'Just Chilling', 'Super Excited!']
 };
 
 const INSTRUMENT_MAP = {
@@ -18,6 +20,14 @@ const INSTRUMENT_MAP = {
 };
 
 const OUTPUT_FOLDER = "AIxFood";
+const DEFAULT_AUDIO_DURATION_SECONDS = 120;
+const DEFAULT_LYRICS_REPEAT_COUNT = 3;
+const DEFAULT_CUSTOM_LYRICS_DIRECTION = '';
+const DEFAULT_SPEED_MOOD = 'Steady & Medium';
+const DEFAULT_VIBE_MOOD = 'Just Chilling';
+const TOTAL_LOOP_VISUALS = 3;
+const VISUAL_LOOP_INTERVAL_MS = 1200;
+const IMAGE_REGEN_PROMPT_APPEND = ', high-energy action performance, energetic stage presence, dramatic camera pan right';
 
 // ==========================================
 // History Management & Band Class
@@ -30,20 +40,18 @@ class Band {
     this.colorUri = colorUri;
     this.depthUri = depthUri;
     this.soundUri = soundUri;
-    this.meshGroup = null; // Will hold the Plane meshes
+    this.meshGroup = null;
   }
 
-  // Generate the plane mesh with border immediately upon creation
   buildPlaneMesh() {
     if (!window.THREE) {
       console.warn("THREE.js is not loaded yet.");
       return;
     }
 
-    // 1. Inner Plane (The generated image)
     const textureLoader = new window.THREE.TextureLoader();
     const map = textureLoader.load(this.colorUri);
-    // Flux images are square by default, size arbitrarily set to 100 for 3D space
+
     const innerGeo = new window.THREE.PlaneGeometry(100, 100);
     const innerMat = new window.THREE.MeshBasicMaterial({
       map: map,
@@ -51,22 +59,18 @@ class Band {
     });
     const innerMesh = new window.THREE.Mesh(innerGeo, innerMat);
 
-    // 2. Outer Plane (The border/frame)
-    // Slightly larger than the inner plane to create a frame effect
     const outerGeo = new window.THREE.PlaneGeometry(106, 106);
     const outerMat = new window.THREE.MeshBasicMaterial({
       color: 0xffffff,
       side: window.THREE.DoubleSide
     });
     const outerMesh = new window.THREE.Mesh(outerGeo, outerMat);
-    outerMesh.position.z = -0.5; // Push slightly back so it sits behind the image
+    outerMesh.position.z = -0.5;
 
-    // 3. Group them together
     const group = new window.THREE.Group();
     group.add(outerMesh);
     group.add(innerMesh);
 
-    // Store the finalized mesh group in this class instance
     this.meshGroup = group;
   }
 }
@@ -74,11 +78,18 @@ class Band {
 // State Management
 let currentBase64Image = null;
 let currentSessionTimestamp = "";
+let generatedVisuals = [];
+let visualLoopTimerId = null;
+let visualLoopIndex = 0;
+let activeVisualGenerationToken = 0;
+let bandArrivalHideTimerId = null;
 
 const selections = {
   food: new Set(),
   taste: new Set(),
-  genre: new Set()
+  genre: new Set(),
+  moodSpeed: new Set(),
+  moodVibe: new Set()
 };
 
 // Utility Functions
@@ -93,24 +104,223 @@ function getFormattedTimestamp() {
   return `${yy}${mm}${dd}-${hh}${min}${ss}`;
 }
 
-function determineAudioSettings(selectedTastes) {
-  let settings = {
-    bpm: 190,
-    keyscale: "E minor"
+function determineAudioSettings({ speedMood, vibeMood }) {
+  const bpmBySpeedMood = {
+    'Chill & Slow': 82,
+    'Steady & Medium': 110,
+    'Upbeat & Fast': 148,
+    'Hyper & Super Fast': 190
   };
 
-  if (selectedTastes.has('Spicy') || selectedTastes.has('Refreshing')) {
-    settings.bpm = 145;
-    settings.keyscale = "C major";
-  } else if (selectedTastes.has('Greasy') || selectedTastes.has('Bitter') || selectedTastes.has('Sour')) {
-    settings.bpm = 90;
-    settings.keyscale = "E minor";
-  } else if (selectedTastes.has('Sweet') || selectedTastes.has('Creamy')) {
-    settings.bpm = 110;
-    settings.keyscale = "A minor";
+  const keyscaleByVibeMood = {
+    'A Bit Melancholic': 'A minor',
+    'Just Chilling': 'C major',
+    'Super Excited!': 'E major'
+  };
+
+  return {
+    bpm: bpmBySpeedMood[speedMood] || bpmBySpeedMood[DEFAULT_SPEED_MOOD],
+    keyscale: keyscaleByVibeMood[vibeMood] || keyscaleByVibeMood[DEFAULT_VIBE_MOOD]
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function stopVisualLoop() {
+  if (visualLoopTimerId) {
+    clearInterval(visualLoopTimerId);
+    visualLoopTimerId = null;
+  }
+}
+
+function clearBandArrivalTimer() {
+  if (bandArrivalHideTimerId) {
+    clearTimeout(bandArrivalHideTimerId);
+    bandArrivalHideTimerId = null;
+  }
+}
+
+function showBandArrivalMessage() {
+  const topArea = document.querySelector('#step-result .result-top-area');
+  if (!topArea) return;
+
+  clearBandArrivalTimer();
+  topArea.classList.remove('message-hidden');
+
+  bandArrivalHideTimerId = setTimeout(() => {
+    topArea.classList.add('message-hidden');
+  }, 4000);
+}
+
+function resetSelectionUI() {
+  document.querySelectorAll('.tag-btn.active').forEach((button) => {
+    button.classList.remove('active');
+  });
+
+  selections.food.clear();
+  selections.taste.clear();
+  selections.genre.clear();
+  selections.moodSpeed.clear();
+  selections.moodVibe.clear();
+
+  document.querySelectorAll('.next-btn').forEach((button) => {
+    button.disabled = true;
+  });
+
+  if (commentsFood) commentsFood.value = '';
+  if (commentsTaste) commentsTaste.value = '';
+  if (commentsGenre) commentsGenre.value = '';
+  if (fileInput) fileInput.value = '';
+
+  applyDefaultMoodSelections();
+}
+
+function setContainerThreeOpacityState(state) {
+  const containerThree = document.getElementById('container-three');
+  if (!containerThree) return;
+
+  containerThree.classList.remove('dimmed', 'active');
+
+  if (state === 'dimmed') {
+    containerThree.classList.add('dimmed');
+    return;
   }
 
-  return settings;
+  containerThree.classList.add('active');
+}
+
+function updateStep4GenerateState() {
+  if (!generateBtn) return;
+
+  const hasSpeedMood = selections.moodSpeed.size > 0;
+  const hasVibeMood = selections.moodVibe.size > 0;
+
+  generateBtn.disabled = !(hasSpeedMood && hasVibeMood);
+}
+
+function applyDefaultMoodSelections() {
+  const defaults = [
+    { containerId: 'tags-mood-speed', category: 'moodSpeed', value: DEFAULT_SPEED_MOOD },
+    { containerId: 'tags-mood-vibe', category: 'moodVibe', value: DEFAULT_VIBE_MOOD }
+  ];
+
+  defaults.forEach(({ containerId, category, value }) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    selections[category].clear();
+    selections[category].add(value);
+
+    Array.from(container.children).forEach((button) => {
+      button.classList.toggle('active', button.innerText === value);
+    });
+  });
+
+  updateStep4GenerateState();
+}
+
+function inviteNextBand() {
+  setContainerThreeOpacityState('dimmed');
+
+  stopVisualLoop();
+  clearBandArrivalTimer();
+  generatedVisuals = [];
+  visualLoopIndex = 0;
+  activeVisualGenerationToken += 1;
+  currentBase64Image = null;
+  currentSessionTimestamp = '';
+
+  const topArea = document.querySelector('#step-result .result-top-area');
+  if (topArea) {
+    topArea.classList.remove('message-hidden');
+  }
+
+  if (outImage) outImage.src = '';
+  if (outAudio) outAudio.src = '';
+  if (audioProgressBar) audioProgressBar.style.width = '0%';
+
+  if (statusImage) statusImage.innerText = 'IMAGE';
+  if (statusAudio) statusAudio.innerText = 'AUDIO';
+
+  document.querySelectorAll('.loader-text, .circular-loader').forEach((element) => {
+    element.classList.remove('done');
+  });
+
+  resetSelectionUI();
+  showStep(0);
+}
+
+function beginNewVisualSequence() {
+  stopVisualLoop();
+  generatedVisuals = [];
+  visualLoopIndex = 0;
+  activeVisualGenerationToken += 1;
+  return activeVisualGenerationToken;
+}
+
+function isResultStepVisible() {
+  const resultStep = document.getElementById('step-result');
+  return Boolean(resultStep && !resultStep.classList.contains('hidden'));
+}
+
+function displayVisual(visual, options = {}) {
+  if (!visual?.imageDataURI) return;
+
+  outImage.src = visual.imageDataURI;
+  initThreeJSShader(visual.imageDataURI, visual.depthDataURI, options);
+}
+
+function startVisualLoop(token) {
+  stopVisualLoop();
+
+  if (generatedVisuals.length < 2) return;
+
+  visualLoopTimerId = window.setInterval(() => {
+    if (token !== activeVisualGenerationToken || !isResultStepVisible()) {
+      stopVisualLoop();
+      return;
+    }
+
+    visualLoopIndex = (visualLoopIndex + 1) % generatedVisuals.length;
+    displayVisual(generatedVisuals[visualLoopIndex], {
+      animateIn: false,
+      pulseOnSwap: false
+    });
+  }, VISUAL_LOOP_INTERVAL_MS);
+}
+
+function buildStructuredLyrics({ foods, tastes, genre, repeatCount, customDirection, foodComment, tasteComment }) {
+  const foodLine = foods.length > 0 ? foods.join(', ') : 'signature flavor';
+  const tasteLine = tastes.length > 0 ? tastes.join(', ') : 'vivid emotions';
+
+  const foodPhrase = foodComment ? `${foodLine}, ${foodComment}` : foodLine;
+  const tastePhrase = tasteComment ? `${tasteLine}, ${tasteComment}` : tasteLine;
+
+  const foodRepeat = Array(4).fill(foodPhrase).join('\n');
+  const tasteRepeat = Array(4).fill(tastePhrase).join('\n');
+
+  const chorusMixed = [foodPhrase, tastePhrase, foodPhrase, tastePhrase].join('\n');
+
+  return [
+    '[Verse 1 - Male Vocal]',
+    foodRepeat,
+    '',
+    '[Verse 2 - Female Vocal]',
+    tasteRepeat,
+    '',
+    '[Pre-Chorus - Male & Female]',
+    foodLine,
+    tasteLine,
+    '',
+    '[Chorus - Male + Female + Chorus Stack]',
+    chorusMixed,
+    '',
+    customDirection ? `[Custom Direction]\n${customDirection}` : ''
+  ].filter(Boolean).join('\n');
 }
 
 // DOM Elements
@@ -130,6 +340,11 @@ const commentsGenre = document.getElementById('comments-genre');
 
 // Step Navigation
 function showStep(stepIndex) {
+  if (stepIndex !== 'result') {
+    stopVisualLoop();
+    clearBandArrivalTimer();
+  }
+
   document.querySelectorAll('.step').forEach(step => {
     if (step.id === `step-${stepIndex}`) {
       step.classList.remove('hidden');
@@ -155,20 +370,52 @@ function init() {
   buildTagButtons('tags-food', TAG_DATA.food, 'food', '1');
   buildTagButtons('tags-taste', TAG_DATA.taste, 'taste', '2');
   buildTagButtons('tags-genre', TAG_DATA.genre, 'genre', '3', true);
+  buildTagButtons('tags-mood-vibe', TAG_DATA.moodVibe, 'moodVibe', '4', true, DEFAULT_VIBE_MOOD);
+  buildTagButtons('tags-mood-speed', TAG_DATA.moodSpeed, 'moodSpeed', '4', true, DEFAULT_SPEED_MOOD);
+  setContainerThreeOpacityState('active');
+  bindCommentTextareaEnterAdvance();
+  updateStep4GenerateState();
 
   const restartBtn = document.getElementById('restart-btn');
-  if (restartBtn) restartBtn.addEventListener('click', () => location.reload());
+  if (restartBtn) restartBtn.addEventListener('click', inviteNextBand);
 }
 
-function buildTagButtons(containerId, items, category, stepNum, isSingleSelect = false) {
+function bindCommentTextareaEnterAdvance() {
+  document.querySelectorAll('.comment-box').forEach((textarea) => {
+    textarea.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.shiftKey) return;
+
+      event.preventDefault();
+
+      const step = textarea.closest('.step');
+      if (!step) return;
+
+      const nextButton = step.querySelector('.next-btn');
+      if (nextButton && !nextButton.disabled) {
+        nextButton.click();
+      }
+    });
+  });
+}
+
+function buildTagButtons(containerId, items, category, stepNum, isSingleSelect = false, defaultItem = null) {
   const container = document.getElementById(containerId);
   const nextBtn = document.querySelector(`#step-${stepNum} .next-btn`);
   if (!container) return;
+
+  const shouldApplyDefault = isSingleSelect && Boolean(defaultItem);
 
   items.forEach(item => {
     const btn = document.createElement('button');
     btn.className = 'tag-btn';
     btn.innerText = item;
+
+    if (shouldApplyDefault && item === defaultItem) {
+      btn.classList.add('active');
+      selections[category].clear();
+      selections[category].add(item);
+    }
+
     btn.addEventListener('click', () => {
       if (isSingleSelect) {
         Array.from(container.children).forEach(c => c.classList.remove('active'));
@@ -180,10 +427,26 @@ function buildTagButtons(containerId, items, category, stepNum, isSingleSelect =
         if (isActive) selections[category].add(item);
         else selections[category].delete(item);
       }
-      if (nextBtn) nextBtn.disabled = selections[category].size === 0;
+
+      if (stepNum === '4') {
+        updateStep4GenerateState();
+      } else if (nextBtn) {
+        nextBtn.disabled = selections[category].size === 0;
+      }
+
+      if (category === 'food' || category === 'taste') {
+        if (typeof window.updateTextLabels === 'function') {
+          const labels = [...selections.food, ...selections.taste].slice(0, 6);
+          window.updateTextLabels(labels);
+        }
+      }
     });
     container.appendChild(btn);
   });
+
+  if (stepNum === '4') {
+    updateStep4GenerateState();
+  }
 }
 
 // File Handling
@@ -224,6 +487,7 @@ outAudio.addEventListener('ended', () => audioProgressBar.style.width = '0%');
 // Main Execution
 if (generateBtn) {
   generateBtn.addEventListener('click', () => {
+    const visualToken = beginNewVisualSequence();
     showStep('loading');
 
     document.querySelectorAll('.loader-text, .circular-loader').forEach(el => el.classList.remove('done'));
@@ -233,25 +497,37 @@ if (generateBtn) {
     const foods = Array.from(selections.food);
     const tastes = Array.from(selections.taste);
     const genres = Array.from(selections.genre);
+    const speedMood = Array.from(selections.moodSpeed)[0] || DEFAULT_SPEED_MOOD;
+    const vibeMood = Array.from(selections.moodVibe)[0] || DEFAULT_VIBE_MOOD;
 
     const foodStr = foods.length > 0 ? foods.join(", ") : "generic food";
     const tasteStr = tastes.length > 0 ? tastes.join(", ") : "delicious";
     const genreStr = genres.length > 0 ? genres[0] : "Jazz";
 
+    const foodComment = commentsFood ? commentsFood.value.trim() : '';
+    const tasteComment = commentsTaste ? commentsTaste.value.trim() : '';
     const genreDetail = commentsGenre ? ` (${commentsGenre.value.trim()})` : "";
+    const foodDetail = foodComment ? ` (${foodComment})` : "";
+    const tasteDetail = tasteComment ? ` (${tasteComment})` : "";
     const instruments = INSTRUMENT_MAP[genreStr] || 'various musical instruments';
 
-    const imagePrompt = `the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed. tiny food-shape musicians are generated based on ${foodStr} and performing as a small cozy band across a food landscape. cute miniature ${foodStr} characters playing ${instruments}${genreDetail}. The overall atmosphere has a ${tasteStr} and ${genreStr} vibe, passionate and dynamic performance.`;
+    const imagePrompt = `the food remain completely unchanged and realistic, preserving the original appearance and texture, photorealistic food, macro photography, tilt-shift effect, highly detailed. tiny food-shape musicians are generated based on ${foodStr}${foodDetail} and performing as a small cozy band across a food landscape. cute miniature ${foodStr} characters playing ${instruments}${genreDetail}. The overall atmosphere has a ${tasteStr}${tasteDetail} and ${genreStr} vibe, passionate and dynamic performance.`;
 
-    const audioPrompt = `A highly rhythmic, energetic track with a strong driving beat. Style: ${genreStr}${genreDetail}. Vibe and mood: ${tasteStr}. Inspired by a culinary experience of ${foodStr}.`;
+    const audioPrompt = `Priority: make low-mid frequencies dominant with a hard-hitting kick and an aggressive bassline. A highly rhythmic, energetic track with a strong driving beat. Style: ${genreStr}${genreDetail}. Vibe and mood: ${tasteStr}${tasteDetail}. Current energy: ${speedMood}. Emotional tone: ${vibeMood}. Inspired by a culinary experience of ${foodStr}${foodDetail}.`;
 
-    let lyricsArray = [...foods];
-    const paddingWords = ['Tasty', 'Fresh', 'Savory', 'Bite'];
-    let i = 0;
-    while (lyricsArray.length < 4) { lyricsArray.push(paddingWords[i % paddingWords.length]); i++; }
-    const finalLyrics = lyricsArray.slice(0, 4).join("\n");
+    const finalLyrics = buildStructuredLyrics({
+      foods,
+      tastes,
+      genre: genreStr,
+      repeatCount: DEFAULT_LYRICS_REPEAT_COUNT,
+      customDirection: DEFAULT_CUSTOM_LYRICS_DIRECTION,
+      foodComment,
+      tasteComment
+    });
 
-    const audioSettings = determineAudioSettings(selections.taste);
+    const durationSeconds = DEFAULT_AUDIO_DURATION_SECONDS;
+
+    const audioSettings = determineAudioSettings({ speedMood, vibeMood });
 
     currentSessionTimestamp = getFormattedTimestamp();
 
@@ -268,6 +544,7 @@ if (generateBtn) {
       seed: Math.floor(Math.random() * 1000000),
       bpm: audioSettings.bpm,
       keyscale: audioSettings.keyscale,
+      durationSeconds,
       filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-audio`
     };
 
@@ -276,6 +553,14 @@ if (generateBtn) {
       fetchMedia('/api/generate-audio', payloadAudio, 'audio')
     ]).then(([imageData, audioDataURI]) => {
       if (imageData && imageData.success && audioDataURI) {
+        setContainerThreeOpacityState('active');
+
+        const initialVisual = {
+          imageDataURI: imageData.imageDataURI,
+          depthDataURI: imageData.depthDataURI
+        };
+        generatedVisuals = [initialVisual];
+        visualLoopIndex = 0;
 
         // 1. Create Band instance and generate Plane Meshes
         const newBand = new Band(
@@ -291,18 +576,23 @@ if (generateBtn) {
         console.log("Total Bands in History:", historyGrid.length);
 
         // 3. Update DOM elements
-        outImage.src = imageData.imageDataURI;
         outAudio.src = audioDataURI;
 
         if (statusImage) statusImage.innerText = "IMAGE & DEPTH READY";
         if (statusAudio) statusAudio.innerText = "AUDIO READY";
 
         showStep('result');
-        outAudio.play();
+        showBandArrivalMessage();
 
-        // Pass URIs to the shader material update logic (for the 2.5D background effect)
-        initThreeJSShader(imageData.imageDataURI, imageData.depthDataURI);
-        runContinuousImageRegeneration(imagePrompt);
+        displayVisual(initialVisual, { animateIn: true, pulseOnSwap: false });
+
+        if (typeof window.playGeneratedAudioInP5 === 'function') {
+          window.playGeneratedAudioInP5(audioDataURI);
+        } else {
+          outAudio.play();
+        }
+
+        void generateAdditionalVisuals(imagePrompt, visualToken);
       } else {
         alert("Generation failed. Check server logs.");
         showStep(0);
@@ -338,45 +628,62 @@ async function fetchMedia(endpoint, payload, type) {
   }
 }
 
-// Continuous Image Loop
-async function runContinuousImageRegeneration(originalPrompt) {
-  const resultStep = document.getElementById('step-result');
-  if (!resultStep || resultStep.classList.contains('hidden')) {
+async function fetchNextImageIteration(payload) {
+  const res = await fetch('/api/generate-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await res.json();
+
+  if (!result.success || !result.imageDataURI || !result.depthDataURI) {
+    throw new Error(result.error || 'Image regeneration failed.');
+  }
+
+  return result;
+}
+
+async function generateAdditionalVisuals(originalPrompt, token) {
+  let referenceImage = generatedVisuals[0]?.imageDataURI || outImage.src;
+  const hyperDynamicPrompt = `${originalPrompt}${IMAGE_REGEN_PROMPT_APPEND}`;
+
+  while (generatedVisuals.length < TOTAL_LOOP_VISUALS) {
+    if (token !== activeVisualGenerationToken || !isResultStepVisible()) {
+      return;
+    }
+
+    const nextPayload = {
+      promptText: hyperDynamicPrompt,
+      seed: Math.floor(Math.random() * 1000000),
+      referenceImage,
+      filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}-loop-${generatedVisuals.length + 1}`
+    };
+
+    try {
+      const loopResult = await fetchNextImageIteration(nextPayload);
+      generatedVisuals.push({
+        imageDataURI: loopResult.imageDataURI,
+        depthDataURI: loopResult.depthDataURI
+      });
+      referenceImage = loopResult.imageDataURI;
+    } catch (err) {
+      console.error('[Loop] Failed.', err);
+      break;
+    }
+  }
+
+  if (token !== activeVisualGenerationToken) {
     return;
   }
 
-  const resultBase64Input = outImage.src;
-  const movementAugmentation = ", high-energy action performance, energetic stage presence, dramatic camera pan right";
-  const hyperDynamicPrompt = originalPrompt + movementAugmentation;
-
-  const nextPayload = {
-    promptText: hyperDynamicPrompt,
-    seed: Math.floor(Math.random() * 1000000),
-    referenceImage: resultBase64Input,
-    filePrefix: `${OUTPUT_FOLDER}/ai-food-${currentSessionTimestamp}`
-  };
-
-  try {
-    const loopRes = await fetch('/api/generate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nextPayload)
-    });
-    const loopResult = await loopRes.json();
-
-    if (loopResult.success && loopResult.imageDataURI) {
-      outImage.src = loopResult.imageDataURI;
-      initThreeJSShader(loopResult.imageDataURI, loopResult.depthDataURI);
-    }
-  } catch (err) {
-    console.error("[Loop] Failed.", err);
-  }
+  startVisualLoop(token);
 }
 
 // Shader Integration Hook
-function initThreeJSShader(imageURI, depthURI) {
+function initThreeJSShader(imageURI, depthURI, options) {
   if (window.updateThreeJSMaterial) {
-    window.updateThreeJSMaterial(imageURI, depthURI);
+    window.updateThreeJSMaterial(imageURI, depthURI, options);
   }
 }
 

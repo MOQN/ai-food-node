@@ -24,24 +24,19 @@ const SHADER_CONFIG = {
   transitionOscillation: 1.4,
   clickPulseDuration: 0.45,
   clickPulseStrength: 0.12,
-  idleOrbitRadius: 2.2,
+  idleOrbitRadius: 2.5,
   idleOrbitSpeedMin: 0.82,
-  idleOrbitSpeedMax: 1.92
+  idleOrbitSpeedMax: 1.92,
+  audioScaleBase: 1.0,
+  audioScaleStrength: 0.32,
+  audioScaleSmoothing: 0.08
 };
+
+let currentAudioScale = SHADER_CONFIG.audioScaleBase;
 
 function triggerClickPulse() {
   clickPulseStartTime = performance.now() * 0.001;
   isClickPulsing = true;
-}
-
-function bindClickPulseEvent() {
-  if (clickPulseEventBound) return;
-
-  window.addEventListener('pointerdown', () => {
-    triggerClickPulse();
-  });
-
-  clickPulseEventBound = true;
 }
 
 async function loadShaders() {
@@ -64,8 +59,6 @@ function configureTexture(texture) {
 }
 
 async function setupShaders(scene, initialDepthScale) {
-  bindClickPulseEvent();
-
   const shaders = await loadShaders();
 
   const gridX = SHADER_CONFIG.gridX;
@@ -162,7 +155,7 @@ async function setupShaders(scene, initialDepthScale) {
 
 let animationStartTime = 0;
 
-function updateShaders(currentTime, currentDepthScale, meshTilt) {
+function updateShaders(currentTime, currentDepthScale, meshTilt, audioVolume = 0) {
   if (!customMaterial) return;
 
   const timeInSeconds = currentTime * 0.001;
@@ -174,6 +167,13 @@ function updateShaders(currentTime, currentDepthScale, meshTilt) {
 
   if (instancedObjs && typeof meshTilt === 'number') {
     instancedObjs.rotation.x = meshTilt; //
+  }
+
+  if (instancedObjs) {
+    const safeVolume = Math.max(0, Math.min(1, Number(audioVolume) || 0));
+    const targetScale = SHADER_CONFIG.audioScaleBase + (safeVolume * SHADER_CONFIG.audioScaleStrength);
+    currentAudioScale += (targetScale - currentAudioScale) * SHADER_CONFIG.audioScaleSmoothing;
+    instancedObjs.scale.setScalar(currentAudioScale);
   }
 
   if (isClickPulsing) {
@@ -214,6 +214,8 @@ function updateShaders(currentTime, currentDepthScale, meshTilt) {
 }
 
 function trigger25DAppearance(imageURI, depthURI) {
+  const options = arguments[2] || {};
+  const animateIn = options.animateIn !== false;
   const loader = new THREE.TextureLoader();
 
   loader.load(imageURI, (colorTexture) => {
@@ -227,12 +229,16 @@ function trigger25DAppearance(imageURI, depthURI) {
       customMaterial.uniforms.tColor.value = colorTexture; // [cite: 1]
       customMaterial.uniforms.tDepth.value = depthTexture; // [cite: 3]
 
-      // 애니메이션 시작 시간 기록 및 플래그 활성화
-      animationStartTime = performance.now() * 0.001;
-      isAnimatingIn = true;
-
-      // 초기 상태는 흩어진 상태 (t=0일 때 cos(0)=1이므로 uTransition=1에서 시작)
-      customMaterial.uniforms.uTransition.value = 1.0;
+      if (animateIn) {
+        animationStartTime = performance.now() * 0.001;
+        isAnimatingIn = true;
+        hasCompletedInitialGather = false;
+        customMaterial.uniforms.uTransition.value = 1.0;
+      } else {
+        isAnimatingIn = false;
+        hasCompletedInitialGather = true;
+        customMaterial.uniforms.uTransition.value = 0.0;
+      }
     });
   });
 }
