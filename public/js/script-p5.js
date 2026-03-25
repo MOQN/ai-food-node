@@ -12,9 +12,10 @@ function draw() {
   clear();
 
   // Draw a test element to prove p5 is running on top of Three.js
-  fill(255, 0, 127, 150); // Hot pink with some transparency
-  noStroke();
-  circle(mouseX, mouseY, 50);
+  //fill(255, 0, 127, 150); // Hot pink with some transparency
+  //noStroke();
+  //circle(mouseX, mouseY, 50);
+  noLoop();
 }
 
 function windowResized() {

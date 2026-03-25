@@ -301,13 +301,15 @@ async function runContinuousImageRegeneration(originalPrompt) {
 
     if (loopResult.success && loopResult.imageDataURI) {
       outImage.src = loopResult.imageDataURI;
-      initThreeJSShader(loopResult.imageDataURI, null);
+
+      // Re-apply both the new color image and the newly generated depth map
+      initThreeJSShader(loopResult.imageDataURI, loopResult.depthDataURI);
     }
   } catch (err) {
     console.error("[Loop] Failed.", err);
   }
 
-  setTimeout(() => runContinuousImageRegeneration(originalPrompt), 1000);
+  //setTimeout(() => runContinuousImageRegeneration(originalPrompt), 1000);
 }
 
 // Shader Integration Hook
@@ -318,3 +320,33 @@ function initThreeJSShader(imageURI, depthURI) {
 }
 
 init();
+
+
+
+
+// to test
+async function loadShaderTestImages() {
+  const testImagePath = '/shaderTest/image.png';
+  const testDepthPath = '/shaderTest/depth.png';
+
+  if (outImage) {
+    outImage.src = testImagePath;
+  }
+
+  showStep('result');
+
+  const applyWhenReady = () => {
+    if (window.updateThreeJSMaterial) {
+      initThreeJSShader(testImagePath, testDepthPath);
+    } else {
+      setTimeout(applyWhenReady, 100);
+    }
+  };
+
+  // Wait a bit longer so setupShaders() can finish creating customMaterial
+  setTimeout(applyWhenReady, 300);
+}
+
+window.addEventListener('load', () => {
+  loadShaderTestImages();
+});
