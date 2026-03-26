@@ -11,6 +11,19 @@ function setupThree() {
   setupShaders(scene, ui.depthScale);
 }
 
+let deltaPeakTracker = 0.02;
+
+function toNormalizedExponentialDelta(rawDelta) {
+  const safeRaw = Math.max(0, Number(rawDelta) || 0);
+  const decay = Math.max(0.97, Math.min(0.999, Number(ui.deltaPeakDecay) || 0.992));
+  deltaPeakTracker = Math.max(0.02, deltaPeakTracker * decay, safeRaw);
+
+  const normalized = Math.max(0, Math.min(1, safeRaw / deltaPeakTracker));
+  const exponent = Math.max(2, Math.min(4, Number(ui.deltaExponent) || 3));
+
+  return 1 - Math.pow(1 - normalized, exponent);
+}
+
 function updateThree() {
   let audioVolume = 0;
   let audioDelta = 0;
@@ -19,10 +32,10 @@ function updateThree() {
   if (typeof window.getP5AudioMetrics === 'function') {
     const metrics = window.getP5AudioMetrics();
     audioVolume = Number(metrics.volume.toFixed(4));
-    audioDelta = Number(metrics.delta.toFixed(4));
+    audioDelta = toNormalizedExponentialDelta(metrics.delta);
     isAudioPlaying = Boolean(metrics.isPlaying);
     ui.audioVolume = audioVolume;
-    ui.audioVolumeDelta = audioDelta;
+    ui.audioVolumeDelta = Number(audioDelta.toFixed(4));
   }
 
   if (typeof window.updateParticles === 'function') {

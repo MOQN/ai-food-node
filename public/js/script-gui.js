@@ -6,7 +6,9 @@ let ui = {
   meshTilt: -0.30,
   audioVolume: 0,
   audioVolumeDelta: 0,
-  burstThreshold: 0.08,
+  deltaExponent: 3,
+  deltaPeakDecay: 0.992,
+  burstThreshold: 0.75,
   burstSpawnDistance: 1000
 };
 
@@ -45,7 +47,21 @@ function setupGUI() {
     readonly: true,
     view: 'graph',
     min: 0,
-    max: 0.5,
+    max: 1,
+  });
+
+  pane.addBinding(ui, 'deltaExponent', {
+    label: 'Delta Exp',
+    min: 2,
+    max: 4,
+    step: 0.1,
+  });
+
+  pane.addBinding(ui, 'deltaPeakDecay', {
+    label: 'Delta Decay',
+    min: 0.97,
+    max: 0.999,
+    step: 0.001,
   });
 
   const burstBinding = pane.addBinding(ui, 'burstThreshold', {

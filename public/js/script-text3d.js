@@ -19,7 +19,9 @@ const TEXT3D_CONFIG = {
   curveSegments: 4,
   spreadX: 1100,
   spreadY: 720,
-  centerAvoidRadiusXY: 500,
+  centerAvoidRadiusXY: 450,
+  minTextDistanceXY: 185,
+  placementMaxAttempts: 40,
   spreadZ: 60,
   baseZ: 120,
   floatAmplitudeX: 45,
@@ -41,29 +43,16 @@ const TEXT3D_PALETTE = [
 ];
 
 class FloatingTextMesh {
-  constructor(text, font, colorIndex, scene) {
+  constructor(text, font, colorIndex, scene, basePosition = null) {
     this.scene = scene;
     this.seedX = Math.random() * Math.PI * 2;
     this.seedY = Math.random() * Math.PI * 2;
     this.seedZ = Math.random() * Math.PI * 2;
     this.floatSpeed = TEXT3D_CONFIG.floatSpeedBase * (0.7 + Math.random() * 0.6);
 
-    this.basePos = new THREE.Vector3(
-      THREE.MathUtils.randFloatSpread(TEXT3D_CONFIG.spreadX),
-      THREE.MathUtils.randFloatSpread(TEXT3D_CONFIG.spreadY),
-      TEXT3D_CONFIG.baseZ + THREE.MathUtils.randFloatSpread(TEXT3D_CONFIG.spreadZ)
-    );
-
-    const minRadius = TEXT3D_CONFIG.centerAvoidRadiusXY;
-    const xyDistance = Math.hypot(this.basePos.x, this.basePos.y);
-    if (xyDistance < minRadius) {
-      const angle = xyDistance > 0.001
-        ? Math.atan2(this.basePos.y, this.basePos.x)
-        : Math.random() * Math.PI * 2;
-      const pushedRadius = minRadius + Math.random() * 80;
-      this.basePos.x = Math.cos(angle) * pushedRadius;
-      this.basePos.y = Math.sin(angle) * pushedRadius;
-    }
+    this.basePos = basePosition
+      ? basePosition.clone()
+      : sampleTextBasePosition();
 
     const geo = new window.TextGeometry(text, {
       font,
@@ -107,6 +96,64 @@ class FloatingTextMesh {
   }
 }
 
+function sampleTextBasePosition() {
+  const pos = new THREE.Vector3(
+    THREE.MathUtils.randFloatSpread(TEXT3D_CONFIG.spreadX),
+    THREE.MathUtils.randFloatSpread(TEXT3D_CONFIG.spreadY),
+    TEXT3D_CONFIG.baseZ + THREE.MathUtils.randFloatSpread(TEXT3D_CONFIG.spreadZ)
+  );
+
+  const minRadius = TEXT3D_CONFIG.centerAvoidRadiusXY;
+  const xyDistance = Math.hypot(pos.x, pos.y);
+  if (xyDistance < minRadius) {
+    const angle = xyDistance > 0.001
+      ? Math.atan2(pos.y, pos.x)
+      : Math.random() * Math.PI * 2;
+    const pushedRadius = minRadius + Math.random() * 80;
+    pos.x = Math.cos(angle) * pushedRadius;
+    pos.y = Math.sin(angle) * pushedRadius;
+  }
+
+  return pos;
+}
+
+function isFarEnoughFromPlaced(candidate, placedPositions) {
+  const minDistance = TEXT3D_CONFIG.minTextDistanceXY;
+  for (let i = 0; i < placedPositions.length; i++) {
+    const placed = placedPositions[i];
+    const dx = candidate.x - placed.x;
+    const dy = candidate.y - placed.y;
+    if (Math.hypot(dx, dy) < minDistance) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function placeTextPositions(count) {
+  const placed = [];
+
+  for (let i = 0; i < count; i++) {
+    let chosen = null;
+
+    for (let attempt = 0; attempt < TEXT3D_CONFIG.placementMaxAttempts; attempt++) {
+      const candidate = sampleTextBasePosition();
+      if (isFarEnoughFromPlaced(candidate, placed)) {
+        chosen = candidate;
+        break;
+      }
+    }
+
+    if (!chosen) {
+      chosen = sampleTextBasePosition();
+    }
+
+    placed.push(chosen);
+  }
+
+  return placed;
+}
+
 function clearTextMeshes() {
   activeTextMeshes.forEach(t => t.dispose());
   activeTextMeshes = [];
@@ -117,9 +164,10 @@ function spawnTextMeshes(labels) {
   if (!textFont || !textMeshScene) return;
   clearTextMeshes();
   const limited = labels.slice(0, TEXT3D_CONFIG.maxMeshes);
+  const positions = placeTextPositions(limited.length);
   currentLabels = [...limited];
   limited.forEach((label, i) => {
-    activeTextMeshes.push(new FloatingTextMesh(label, textFont, i, textMeshScene));
+    activeTextMeshes.push(new FloatingTextMesh(label, textFont, i, textMeshScene, positions[i]));
   });
 }
 
