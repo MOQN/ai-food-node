@@ -27,13 +27,6 @@ function setupGUI() {
   });
   pane.addBlade({ view: 'separator' });
 
-  pane.addBinding(ui, 'meshTilt', {
-    label: 'Mesh Tilt',
-    min: -1.2,
-    max: 0.2,
-    step: 0.01,
-  });
-
   pane.addBlade({ view: 'separator' });
   pane.addBinding(ui, 'audioVolume', {
     label: 'Audio Volume',
