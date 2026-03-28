@@ -9,7 +9,7 @@ let textFontReady = false;
 let pendingLabels = null;
 
 const TEXT3D_CONFIG = {
-  maxMeshes: 6,
+  maxMeshes: 8,
   textSize: 68,
   textDepth: 8,
   bevelEnabled: true,

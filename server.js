@@ -10,10 +10,10 @@ const app = express();
 const PORT = 3000;
 
 // Configuration
-// const COMFYUI_SERVER_IMAGE = "127.0.0.1:8188";
-// const COMFYUI_SERVER_AUDIO = "127.0.0.1:8188";
-const COMFYUI_SERVER_IMAGE = "169.254.214.124:8188";
-const COMFYUI_SERVER_AUDIO = "169.254.214.124:8188";
+const COMFYUI_SERVER_IMAGE = "127.0.0.1:8188";
+const COMFYUI_SERVER_AUDIO = "127.0.0.1:8188";
+// const COMFYUI_SERVER_IMAGE = "169.254.214.124:8188";
+// const COMFYUI_SERVER_AUDIO = "169.254.214.124:8188";
 
 const imageWorkflowPath = path.join(__dirname, "workflow/image.json");
 const audioWorkflowPath = path.join(__dirname, "workflow/audio.json");

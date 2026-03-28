@@ -75,7 +75,7 @@ body {
 .step {
   position: absolute;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1400px;
   padding: 20px;
   text-align: center;
   display: flex;
@@ -124,7 +124,7 @@ body {
   gap: 15px;
   margin: 40px 0 30px 0;
   width: 100%;
-  max-width: 860px;
+  max-width: 1120px;
 }
 
 .step3-mood-title {
