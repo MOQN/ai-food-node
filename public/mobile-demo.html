@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Tiny Delicious Mobile</title>
+    <style>
+      :root {
+        --bg: #0f1218;
+        --panel: #1f2734;
+        --accent: #ff5c7a;
+        --accent-2: #2d9dff;
+        --text: #f6f8ff;
+        --muted: #b8c0d0;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: radial-gradient(circle at 20% 10%, #22314a, var(--bg) 50%);
+        color: var(--text);
+        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        touch-action: manipulation;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      #permission-ui {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 24px;
+        background: rgba(6, 10, 18, 0.94);
+      }
+
+      #screen-gallery,
+      #screen-detail {
+        position: absolute;
+        inset: 0;
+      }
+
+      #screen-gallery {
+        display: grid;
+        grid-template-rows: 1fr auto;
+      }
+
+      .gallery-stage {
+        overflow: hidden;
+        padding-top: 12px;
+        display: grid;
+        grid-template-rows: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .gallery-row-viewport {
+        overflow: hidden;
+        position: relative;
+      }
+
+      .gallery-row-track {
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        will-change: transform;
+      }
+
+      .gallery-item {
+        width: 43vw;
+        max-width: 190px;
+        min-width: 140px;
+        aspect-ratio: 1 / 1;
+        margin: 0 8px;
+        border-radius: 14px;
+        object-fit: cover;
+        user-select: none;
+        -webkit-user-drag: none;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4);
+      }
+
+      .action-bar {
+        padding: 16px 14px 20px;
+        background: linear-gradient(to top, #0a0f17 55%, transparent);
+      }
+
+      .btn {
+        border: 0;
+        border-radius: 999px;
+        padding: 13px 22px;
+        color: #fff;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+
+      .btn-primary {
+        background: var(--accent-2);
+        width: 100%;
+      }
+
+      .btn-confirm {
+        background: var(--accent);
+        min-width: 120px;
+      }
+
+      .btn-back {
+        background: #4c566a;
+        min-width: 120px;
+      }
+
+      #screen-detail {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+      }
+
+      #selected-preview {
+        width: min(78vw, 360px);
+        height: min(78vw, 360px);
+        border-radius: 16px;
+        object-fit: cover;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
+      }
+
+      #detail-buttons {
+        display: flex;
+        gap: 14px;
+      }
+
+      #status-line {
+        font-size: 24px;
+        font-weight: 800;
+        color: #ffd0d9;
+      }
+
+      #status-line small {
+        display: block;
+        margin-top: 6px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      #physics-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        pointer-events: none;
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  </head>
+  <body>
+    <div id="permission-ui">
+      <h2>Allow Motion Access</h2>
+      <p>
+        We need motion sensors for shake trigger and gyro-based pixel physics.
+      </p>
+      <button class="btn btn-confirm" id="start-btn">Start</button>
+    </div>
+
+    <section id="screen-gallery" class="hidden">
+      <div class="gallery-stage" id="gallery-stage">
+        <div class="gallery-row-viewport" id="row-1-viewport">
+          <div class="gallery-row-track" id="row-1-track"></div>
+        </div>
+        <div class="gallery-row-viewport" id="row-2-viewport">
+          <div class="gallery-row-track" id="row-2-track"></div>
+        </div>
+      </div>
+      <div class="action-bar">
+        <input
+          type="file"
+          id="mobile-file-input"
+          accept="image/*"
+          class="hidden"
+        />
+        <button class="btn btn-primary" id="mobile-upload-btn">
+          拍摄或从相册选择
+        </button>
+      </div>
+    </section>
+
+    <section id="screen-detail" class="hidden">
+      <img id="selected-preview" alt="Selected image preview" />
+      <div id="detail-buttons">
+        <button class="btn btn-back" id="btn-back">返回</button>
+        <button class="btn btn-confirm" id="btn-confirm">确定</button>
+      </div>
+      <div id="status-line" class="hidden">
+        开始制作！
+        <small>Shake phone to burst pixels and send image</small>
+      </div>
+    </section>
+
+    <div id="physics-layer"></div>
+
+    <script src="js/mobile-app.js"></script>
+  </body>
+</html>
