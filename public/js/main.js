@@ -11,6 +11,28 @@ function setupThree() {
   setupShaders(scene, ui.depthScale);
 }
 
+let isHoverDepthModeEnabled = false;
+let hoverYRatio = 0.5;
+
+function getDepthScaleFromHoverY(baseDepthScale) {
+  const safeBase = Math.max(0, Number(baseDepthScale) || 0);
+  const clampedY = Math.max(0, Math.min(1, Number(hoverYRatio) || 0));
+  // Top (0) => full depth, Bottom (1) => flat
+  return safeBase * (1 - clampedY);
+}
+
+function setHoverDepthModeEnabled(enabled) {
+  isHoverDepthModeEnabled = Boolean(enabled);
+  const toggleBtn = document.getElementById("hover-depth-toggle");
+  if (!toggleBtn) return;
+
+  toggleBtn.classList.toggle("is-active", isHoverDepthModeEnabled);
+  toggleBtn.setAttribute(
+    "aria-pressed",
+    isHoverDepthModeEnabled ? "true" : "false",
+  );
+}
+
 let deltaPeakTracker = 0.02;
 
 function toNormalizedExponentialDelta(rawDelta) {
@@ -49,8 +71,12 @@ function updateThree() {
     window.updateTextMeshes(time);
   }
 
+  const effectiveDepthScale = isHoverDepthModeEnabled
+    ? getDepthScaleFromHoverY(ui.depthScale)
+    : ui.depthScale;
+
   // Call the external wrapper to update shaders every frame
-  updateShaders(time, ui.depthScale, ui.meshTilt, audioVolume);
+  updateShaders(time, effectiveDepthScale, ui.meshTilt, audioVolume);
 
   // swing the mesh back and forth for a more dynamic look
   if (instancedObjs) {
@@ -133,3 +159,26 @@ window.addEventListener("keydown", (event) => {
     }
   }
 });
+
+window.addEventListener("mousemove", (event) => {
+  if (window.innerHeight <= 0) return;
+  hoverYRatio = event.clientY / window.innerHeight;
+});
+
+window.addEventListener(
+  "touchmove",
+  (event) => {
+    if (window.innerHeight <= 0) return;
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+    hoverYRatio = touch.clientY / window.innerHeight;
+  },
+  { passive: true },
+);
+
+const hoverDepthToggleBtn = document.getElementById("hover-depth-toggle");
+if (hoverDepthToggleBtn) {
+  hoverDepthToggleBtn.addEventListener("click", () => {
+    setHoverDepthModeEnabled(!isHoverDepthModeEnabled);
+  });
+}

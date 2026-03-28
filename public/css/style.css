@@ -316,6 +316,37 @@ body {
   display: none !important;
 }
 
+.hover-depth-toggle {
+  position: fixed;
+  right: 12px;
+  bottom: 10px;
+  z-index: 120;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: lowercase;
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.28;
+}
+
+.hover-depth-toggle:hover {
+  opacity: 0.62;
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.hover-depth-toggle.is-active {
+  opacity: 0.78;
+  color: rgba(57, 255, 20, 0.85);
+  border-color: rgba(57, 255, 20, 0.45);
+  background: rgba(57, 255, 20, 0.08);
+}
+
 .mobile-upload-preview-image {
   width: min(68vw, 520px);
   max-height: min(52vh, 520px);
