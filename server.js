@@ -2,6 +2,7 @@
 
 const express = require("express");
 const WebSocket = require("ws");
+const { WebSocketServer } = WebSocket;
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -165,6 +166,34 @@ function runComfyUIWorkflow(workflowJSON, targetServer, targetNodeIds) {
 
 // Global variable for SSE clients
 let sseClients = [];
+let wsClients = new Set();
+
+function safeSendWS(ws, payload) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(payload));
+}
+
+function broadcastImageUploaded(imageBase64) {
+  const ssePayload = JSON.stringify({
+    action: "image-uploaded",
+    image: imageBase64,
+  });
+
+  // Existing desktop channel: SSE
+  sseClients.forEach((client) => client.write(`data: ${ssePayload}\n\n`));
+
+  // Optional WS broadcast for future clients
+  const wsPayload = { type: "image-uploaded", image: imageBase64 };
+  wsClients.forEach((client) => safeSendWS(client, wsPayload));
+}
+
+function broadcastShakeTriggered() {
+  const ssePayload = JSON.stringify({ action: "shake" });
+  sseClients.forEach((client) => client.write(`data: ${ssePayload}\n\n`));
+
+  const wsPayload = { type: "shake" };
+  wsClients.forEach((client) => safeSendWS(client, wsPayload));
+}
 
 // Endpoint for main page to listen for shake events
 app.get("/api/listen-shake", (req, res) => {
@@ -199,9 +228,7 @@ app.get("/api/dishes", (req, res) => {
 // Endpoint for mobile to trigger shake
 app.post("/api/trigger-shake", (req, res) => {
   console.log("[Server] Success: Shake detected from mobile device!");
-  sseClients.forEach((client) =>
-    client.write(`data: ${JSON.stringify({ action: "shake" })}\n\n`),
-  );
+  broadcastShakeTriggered();
   res.json({ success: true, message: "Shake triggered" });
 });
 
@@ -212,11 +239,7 @@ app.post("/api/mobile-upload", (req, res) => {
 
   console.log("[Server] Success: Received image upload from mobile device!");
   // Broadcast image to main screens
-  sseClients.forEach((client) =>
-    client.write(
-      `data: ${JSON.stringify({ action: "image-uploaded", image: imageBase64 })}\n\n`,
-    ),
-  );
+  broadcastImageUploaded(imageBase64);
   res.json({ success: true, message: "Image forwarded to main screen" });
 });
 
@@ -326,6 +349,78 @@ app.post("/api/generate-audio", async (req, res) => {
   }
 });
 
-app.listen(PORT, () =>
+const server = app.listen(PORT, () =>
   console.log(`Server running at http://localhost:${PORT}`),
 );
+
+// Shared WebSocket server for mobile <-> server direct messaging.
+const wss = new WebSocketServer({ server, path: "/ws" });
+
+wss.on("connection", (ws, req) => {
+  wsClients.add(ws);
+  console.log("[WS] Client connected:", req.socket.remoteAddress || "unknown");
+
+  safeSendWS(ws, {
+    type: "connected",
+    message: "WebSocket connected",
+    serverTime: Date.now(),
+  });
+
+  ws.on("message", (raw) => {
+    let data;
+    try {
+      data = JSON.parse(raw.toString());
+    } catch (err) {
+      safeSendWS(ws, { type: "error", message: "Invalid JSON payload" });
+      return;
+    }
+
+    // Mobile direct image transfer
+    if (data.type === "mobile-upload") {
+      const imageBase64 = data.imageBase64;
+      if (!imageBase64 || typeof imageBase64 !== "string") {
+        safeSendWS(ws, {
+          type: "upload-ack",
+          ok: false,
+          message: "Missing imageBase64",
+        });
+        return;
+      }
+
+      console.log("[WS] Success: Received image upload from mobile device!");
+      broadcastImageUploaded(imageBase64);
+
+      safeSendWS(ws, {
+        type: "upload-ack",
+        ok: true,
+        message: "Image forwarded to main screen",
+      });
+      return;
+    }
+
+    // Optional shake event over WS
+    if (data.type === "trigger-shake") {
+      console.log("[WS] Success: Shake detected from mobile device!");
+      broadcastShakeTriggered();
+      safeSendWS(ws, {
+        type: "shake-ack",
+        ok: true,
+        message: "Shake triggered",
+      });
+      return;
+    }
+
+    safeSendWS(ws, {
+      type: "error",
+      message: `Unsupported message type: ${data.type || "unknown"}`,
+    });
+  });
+
+  ws.on("close", () => {
+    wsClients.delete(ws);
+  });
+
+  ws.on("error", () => {
+    wsClients.delete(ws);
+  });
+});
