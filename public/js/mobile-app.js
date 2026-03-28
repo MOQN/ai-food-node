@@ -6,6 +6,8 @@ let lastShakeTime = 0;
 let pixelsReady = false;
 let pixelBlocks = [];
 let pixelState = "idle";
+let mobileSocket = null;
+let mobileSocketConnected = false;
 let dragState = {
   active: false,
   lastX: 0,
@@ -280,6 +282,21 @@ async function sendSelectedImageToServer() {
     selectedImageBase64 = await toBase64FromUrl(selectedImageUrl);
   }
 
+  // Prefer WebSocket for direct low-latency transfer; fallback to HTTP when needed.
+  if (
+    mobileSocketConnected &&
+    mobileSocket &&
+    mobileSocket.readyState === WebSocket.OPEN
+  ) {
+    mobileSocket.send(
+      JSON.stringify({
+        type: "mobile-upload",
+        imageBase64: selectedImageBase64,
+      }),
+    );
+    return;
+  }
+
   const res = await fetch("/api/mobile-upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -291,7 +308,46 @@ async function sendSelectedImageToServer() {
   }
 
   const data = await res.json();
-  console.log("Mobile upload success:", data);
+  console.log("Mobile upload success (HTTP fallback):", data);
+}
+
+function initMobileSocket() {
+  const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProto}//${window.location.host}/ws`;
+
+  mobileSocket = new WebSocket(wsUrl);
+
+  mobileSocket.addEventListener("open", () => {
+    mobileSocketConnected = true;
+    console.log("[Mobile WS] connected:", wsUrl);
+  });
+
+  mobileSocket.addEventListener("message", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === "upload-ack" && data.ok) {
+        console.log("Mobile upload success (WebSocket):", data.message);
+      }
+    } catch (err) {
+      console.warn("[Mobile WS] Non-JSON message", err);
+    }
+  });
+
+  mobileSocket.addEventListener("close", () => {
+    mobileSocketConnected = false;
+    mobileSocket = null;
+
+    // Auto-reconnect while detail screen remains active.
+    setTimeout(() => {
+      if (!ui.detailScreen.classList.contains("hidden")) {
+        initMobileSocket();
+      }
+    }, 1200);
+  });
+
+  mobileSocket.addEventListener("error", () => {
+    mobileSocketConnected = false;
+  });
 }
 
 function energizePixelBlocks() {
@@ -556,6 +612,10 @@ ui.confirmBtn.addEventListener("click", () => {
   isConfirmed = true;
   ui.detailButtons.classList.add("hidden");
   ui.statusLine.classList.remove("hidden");
+
+  if (!mobileSocketConnected) {
+    initMobileSocket();
+  }
 });
 
 window.addEventListener("pointerdown", () => {
