@@ -166,6 +166,14 @@ function runComfyUIWorkflow(workflowJSON, targetServer, targetNodeIds) {
 // Global variable for SSE clients
 let sseClients = [];
 
+function broadcastUploadedImage(imageBase64, source = "unknown") {
+  sseClients.forEach((client) =>
+    client.write(
+      `data: ${JSON.stringify({ action: "image-uploaded", image: imageBase64, source })}\n\n`,
+    ),
+  );
+}
+
 // Endpoint for main page to listen for shake events
 app.get("/api/listen-shake", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
@@ -212,12 +220,24 @@ app.post("/api/mobile-upload", (req, res) => {
 
   console.log("[Server] Success: Received image upload from mobile device!");
   // Broadcast image to main screens
-  sseClients.forEach((client) =>
-    client.write(
-      `data: ${JSON.stringify({ action: "image-uploaded", image: imageBase64 })}\n\n`,
-    ),
-  );
+  broadcastUploadedImage(imageBase64, "mobile");
   res.json({ success: true, message: "Image forwarded to main screen" });
+});
+
+// Endpoint for receiving image from relay/bridge server
+app.post("/teleport", (req, res) => {
+  const imageBase64 = req.body?.imageBase64 || req.body?.image;
+  if (!imageBase64) {
+    return res.status(400).json({ error: "No image provided" });
+  }
+
+  console.log("[Server] Success: Received teleported image from relay server!");
+  broadcastUploadedImage(imageBase64, "teleport");
+
+  res.json({
+    success: true,
+    message: "Teleported image forwarded to main screen",
+  });
 });
 
 // API Endpoint 1: Generate Image + Depth
